@@ -129,6 +129,21 @@
   :delay 1s
   :return ([:len [/file find where name=$2]] > 0)
 }
+# Copy file $1 to $2 (e.g. RAM -> flash/). Returns true only if $2 exists
+# with the same size as $1; a short copy (flash full) is removed.
+:local mblCopy do={
+  :do {
+    :local f [:parse ("/file copy [find where name=\"" . $1 . "\"] name=\"" . $2 . "\"")]
+    $f
+  } on-error={}
+  :delay 1s
+  :local ok false
+  :do {
+    :if ([/file get [find where name=$2] size] = [/file get [find where name=$1] size]) do={ :set ok true }
+  } on-error={}
+  :if (!$ok) do={ /file remove [find where name=$2] }
+  :return $ok
+}
 :local boot ($mblBoot = true)
 :set mblBoot false
 :if ($mblRunning = true) do={
@@ -139,10 +154,12 @@
   # Every failure path logs, cleans up and raises :error, caught below so
   # that the lock is always released.
   :do {
-    # Devices with a flash/ directory only keep flash/ across reboots.
+    # Devices with a flash/ directory only keep flash/ across reboots. There
+    # the download goes to the RAM root (no flash wear, no flash space used by
+    # a file that may be rejected); only a validated file is copied to flash/.
     :local dir ""
     :if ([:len [/file find where name="flash"]] > 0) do={ :set dir "flash/" }
-    :local newFile ($dir . "mbl-new.rsc")
+    :local newFile "mbl-new.rsc"
     :local lastFile ($dir . "mbl-last.rsc")
     :local tmpFile ($dir . "mbl-tmp.rsc")
     # ---- source file
@@ -244,15 +261,35 @@
       :if ([:len [/file find where name=$lastFile]] = 0 && [:len [/file find where name=$tmpFile]] > 0) do={
         :local rec [$mblMove $tmpFile $lastFile]
       }
-      /file remove [find where name=$tmpFile]
-      :if ([$mblMove $newFile $tmpFile]) do={
-        /file remove [find where name=$lastFile]
-        :if (![$mblMove $tmpFile $lastFile]) do={
-          :log warning "MBL: could not rename $tmpFile to $lastFile, boot will use $tmpFile"
+      # flash/: RAM -> flash copy, only with room for it (2 x the file size)
+      :local room true
+      :if ($dir != "") do={
+        :local free 0
+        :do { :set free [/system resource get free-hdd-space] } on-error={}
+        :if ($free <= ($fsize * 2)) do={
+          :set room false
+          /file remove [find where name=$newFile]
+          :log warning "MBL: not enough flash space for the boot copy ($free bytes free, need more than 2 x $fsize), keeping the previous $lastFile"
         }
-      } else={
-        /file remove [find where name=$newFile]
-        :log warning "MBL: could not save the boot copy, keeping the previous $lastFile"
+      }
+      :if ($room) do={
+        /file remove [find where name=$tmpFile]
+        :local saved false
+        :if ($dir = "") do={
+          :set saved [$mblMove $newFile $tmpFile]
+        } else={
+          :set saved [$mblCopy $newFile $tmpFile]
+          /file remove [find where name=$newFile]
+        }
+        :if ($saved) do={
+          /file remove [find where name=$lastFile]
+          :if (![$mblMove $tmpFile $lastFile]) do={
+            :log warning "MBL: could not rename $tmpFile to $lastFile, boot will use $tmpFile"
+          }
+        } else={
+          /file remove [find where name=$newFile]
+          :log warning "MBL: could not save the boot copy, keeping the previous $lastFile"
+        }
       }
     }
 

@@ -148,3 +148,17 @@ Probado solo en **7.24.5**. Que algo esté en OK aquí no prueba que funcione en
 | 18 | `mblMove`: `:parse` de cadena construida dentro de función, retorno en `:if ([$mblMove a b])` y `![...]`, `file remove [find where name=$1]`; probar rutas de recuperación forzando fallo de rename | OK: rename normal, origen inexistente →false, `/file set` roto→copy. En el script: si solo hay `mbl-tmp.rsc`, el boot lo usa y el siguiente run normal lo recupera como `mbl-last.rsc` |
 | 19 | Reinstalación con ambas listas pobladas: reglas sobre la lista activa previa y sin ventana con la activa vacía | OK: `mbl-a` activa y `mbl-b` con 5 entradas: las reglas se recrean sobre `mbl-a` y la primera carga va a `mbl-b`. Al reinstalar hay unos ms sin reglas `MBL:`, porque se borran y se recrean; la lista activa nunca se vacía |
 | 20 | `mblLastOk`/`mblRunning` visibles al instalador tras `/system script run` (mensaje instalado / primera carga fallida correcto) | OK: `installed`; con URL caída: `installed, but the first load failed`; con lock: `first load skipped` |
+
+## 5. Re-test tras los arreglos finales (2026-10-19)
+
+Cambio probado: en equipos con `flash/`, `mbl-update` descarga e importa desde la raíz (RAM,
+`mbl-new.rsc`) y solo copia a `flash/mbl-last.rsc` (vía `flash/mbl-tmp.rsc`) un fichero ya
+validado, si `free-hdd-space` > 2 × tamaño. CHR 7.24.5, sin `flash/`, URL `lists-test`.
+
+| Prueba | Resultado |
+|---|---|
+| `/import install.rsc` (reinstalación sobre `mbl-a` con 32242 entradas) | OK: `MBL: loaded 32242 entries into mbl-b` + `MBL: installed`; reglas en `mbl-b`, `mbl-a`=0, `install.rsc` borrado |
+| `/system script run mbl-update` | OK: `loaded 32242 entries into mbl-a`; las tres reglas pasan a `mbl-a`, `mbl-b`=0; `mbl-last.rsc` renovado; sin `mbl-new.rsc`/`mbl-tmp.rsc`; lock liberado |
+| Extra: `flash/` simulado (`/file add type=directory name=flash`) | OK: la descarga queda en la raíz, se copia a `flash/mbl-last.rsc` y `mbl-new.rsc` se borra; el modo boot carga desde `flash/mbl-last.rsc`. Solo prueba la lógica del script (en CHR la raíz no es RAM); la rama "sin espacio" no se pudo forzar. Directorio borrado después |
+
+Estado final: instalado con `lists-test`, reglas en `mbl-b` (32242 entradas).

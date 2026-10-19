@@ -16,7 +16,7 @@
 /ip firewall address-list remove [find where list="mbl-a"]
 /ip firewall address-list remove [find where list="mbl-b"]
 /ip firewall address-list remove [find where list="mbl-allow" and comment="MBL: admin"]
-# mbl files live in flash/ on devices that have it
+# mbl files: RAM root (download) and flash/ (boot copy) on devices that have it
 /file remove [find where name~"^(flash/)?mbl-.*\\.rsc\$"]
 /system script environment remove [find where name~"^mbl"]
 /file remove [find where name="uninstall.rsc" or name="flash/uninstall.rsc"]

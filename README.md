@@ -191,7 +191,10 @@ The [`lists`](https://github.com/Psycomy/MikrotikBlockList/tree/lists) branch co
    partial file is discarded and the active list is kept.
 4. Only then are the three drop rules switched to the new list, and the old one is emptied. You are
    protected the whole time; the two lists coexist only for those few seconds.
-5. The new file is kept as `mbl-last.rsc`. Address-list entries with a timeout do not survive a
+5. The new file is kept as `mbl-last.rsc`. On devices with a `flash/` directory the download and
+   import use RAM, and only the validated file is copied to `flash/mbl-last.rsc`, if free storage
+   is more than twice its size (otherwise a warning is logged and the previous copy is kept).
+   Address-list entries with a timeout do not survive a
    reboot, so `mbl-boot` reloads this copy at startup (in seconds, even without Internet) and
    then tries a fresh download 60 seconds later.
 6. A lock prevents two updates from running at once; everything is logged with the `MBL:` prefix.
