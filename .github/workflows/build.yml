@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "17 4 * * *"
   workflow_dispatch:
+    inputs:
+      allow_growth:
+        description: "Publish even if the total more than doubles (expected jump, e.g. a new source)"
+        type: boolean
+        default: false
   push:
     branches: [main]
   pull_request:
@@ -41,14 +46,21 @@ jobs:
           python-version: "3.12"
 
       # Exit code 1 (safety checks failed) fails the step and therefore the
-      # job, so nothing is published.
+      # job, so nothing is published. allow_growth is only set by a manual
+      # run (empty on schedule and push) and skips only the 2x growth check.
       - name: Build
-        run: >
-          python -m mbl build
-          --sources sources.toml
-          --allowlist allowlist.txt
-          --out dist
-          --previous-stats "https://raw.githubusercontent.com/${{ github.repository }}/lists/stats.json"
+        env:
+          ALLOW_GROWTH: ${{ inputs.allow_growth }}
+          PREVIOUS_STATS: "https://raw.githubusercontent.com/${{ github.repository }}/lists/stats.json"
+        run: |
+          extra=()
+          if [ "$ALLOW_GROWTH" = "true" ]; then extra+=(--allow-growth); fi
+          python -m mbl build \
+            --sources sources.toml \
+            --allowlist allowlist.txt \
+            --out dist \
+            --previous-stats "$PREVIOUS_STATS" \
+            "${extra[@]}"
 
       # The lists branch is orphan and overwritten with a single commit.
       - name: Publish to lists branch

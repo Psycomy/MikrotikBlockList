@@ -107,6 +107,8 @@
 :local url "@MBL_URL@"
 :local minSize 100000
 :local minEntries 1000
+# warn when the loaded list was generated more than this many days ago
+:local maxAgeDays 3
 :global mblRunning
 :global mblBoot
 :global mblTarget
@@ -143,6 +145,21 @@
   } on-error={}
   :if (!$ok) do={ /file remove [find where name=$2] }
   :return $ok
+}
+# "2026-10-19" -> days since 0000-03-01 (proleptic Gregorian), so that the
+# difference of two dates is the number of days between them. Leading zeros
+# are stripped before :tonum.
+:local mblDays do={
+  :local num do={
+    :local s $1
+    :while ([:len $s] > 1 && [:pick $s 0] = "0") do={ :set s [:pick $s 1 [:len $s]] }
+    :return [:tonum $s]
+  }
+  :local y [$num [:pick $1 0 4]]
+  :local m [$num [:pick $1 5 7]]
+  :local d [$num [:pick $1 8 10]]
+  :if ($m <= 2) do={ :set y ($y - 1); :set m ($m + 12) }
+  :return ($y * 365 + $y / 4 - $y / 100 + $y / 400 + (153 * ($m - 3) + 2) / 5 + $d - 1)
 }
 :local boot ($mblBoot = true)
 :set mblBoot false
@@ -295,6 +312,16 @@
 
     :set mblLastOk true
     :log info "MBL: loaded $n entries into $target (list generated $gen)"
+
+    # ---- stale list: the list is loaded either way; this only warns, e.g.
+    # when the GitHub Action has stopped. Errors here are ignored so they can
+    # never fail an update that already succeeded.
+    :do {
+      :if ($gen != "unknown") do={
+        :local age ([$mblDays [/system clock get date]] - [$mblDays [:pick $gen 0 10]])
+        :if ($age > $maxAgeDays) do={ :log warning "MBL: list is $age days old" }
+      }
+    } on-error={}
   } on-error={ :log warning "MBL: update aborted" }
   :set mblRunning false
 }

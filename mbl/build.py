@@ -49,7 +49,7 @@ def _summary(results: list[SourceResult], total: int) -> tuple[str, str]:
 
 def build(sources_path: Path, allowlist_path: Path, out_dir: Path,
           previous_stats_url: str | None, now: datetime | None = None,
-          fetcher=fetch_all) -> int:
+          fetcher=fetch_all, allow_growth: bool = False) -> int:
     """Return 0 on success, 1 if safety checks fail, 2 on configuration errors."""
     try:
         sources = load_sources(Path(sources_path))
@@ -71,7 +71,8 @@ def build(sources_path: Path, allowlist_path: Path, out_dir: Path,
             fh.write(md)
 
     failed = [r.source.name for r in results if r.source.required and r.error]
-    errors = safety_errors(total, _previous_total(previous_stats_url), failed)
+    errors = safety_errors(total, _previous_total(previous_stats_url), failed,
+                           allow_growth=allow_growth)
     if errors:
         for error in errors:
             print(f"error: {error}", file=sys.stderr)

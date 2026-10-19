@@ -5,7 +5,9 @@ import unittest
 from datetime import datetime, timezone
 from ipaddress import IPv4Network
 from pathlib import Path
+from unittest import mock
 
+from mbl.__main__ import main
 from mbl.build import build
 from mbl.fetch import SourceResult
 from mbl.sources import Source
@@ -47,10 +49,10 @@ class BuildTest(unittest.TestCase):
         self.allow.write_text("# none\n")
         self.out = self.tmp / "dist"
 
-    def _build(self, fetcher, previous=None, sources=None):
+    def _build(self, fetcher, previous=None, sources=None, **kwargs):
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             return build(sources or self.sources, self.allow, self.out, previous,
-                         now=WHEN, fetcher=fetcher)
+                         now=WHEN, fetcher=fetcher, **kwargs)
 
     def test_build_writes_outputs(self):
         self.assertEqual(self._build(_fetcher()), 0)
@@ -74,6 +76,25 @@ class BuildTest(unittest.TestCase):
 
     def test_build_unreachable_previous_is_ignored(self):
         self.assertEqual(self._build(_fetcher(), previous="http://127.0.0.1:9/stats.json"), 0)
+
+    @mock.patch("mbl.build._previous_total", return_value=6000)
+    def test_build_refuses_growth_above_double(self, _prev):
+        self.assertEqual(self._build(_fetcher(count=12001), previous="x"), 1)
+        self.assertFalse(self.out.exists())
+
+    @mock.patch("mbl.build._previous_total", return_value=6000)
+    def test_build_allow_growth_publishes(self, _prev):
+        self.assertEqual(self._build(_fetcher(count=12001), previous="x", allow_growth=True), 0)
+        self.assertEqual({p.name for p in self.out.iterdir()}, FILES)
+
+
+class MainTest(unittest.TestCase):
+    @mock.patch("mbl.__main__.build", return_value=0)
+    def test_allow_growth_flag(self, build_mock):
+        self.assertEqual(main(["build"]), 0)
+        self.assertFalse(build_mock.call_args.kwargs["allow_growth"])
+        self.assertEqual(main(["build", "--allow-growth"]), 0)
+        self.assertTrue(build_mock.call_args.kwargs["allow_growth"])
 
 
 if __name__ == "__main__":
