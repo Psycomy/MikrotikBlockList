@@ -17,5 +17,6 @@
 # mbl files live in flash/ on devices that have it
 /file remove [find where name~"^(flash/)?mbl-.*\\.rsc\$"]
 /system script environment remove [find where name~"^mbl"]
+/file remove [find where name="uninstall.rsc" or name="flash/uninstall.rsc"]
 :log info "MBL: uninstalled"
 }
