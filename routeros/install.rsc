@@ -68,11 +68,19 @@
 }
 
 # ------------------------------------------ 3. remove a previous installation
+# The address lists are kept so a reinstall never leaves the router
+# unprotected: the new rules point at the list that already has entries.
+:local prevList ""
+:local prevIn [/ip firewall raw find where comment="MBL: in"]
+:if ([:len $prevIn] > 0) do={ :set prevList [/ip firewall raw get ($prevIn->0) src-address-list] }
 /system scheduler remove [find where name~"^mbl-"]
 /system script remove [find where name~"^mbl-"]
 /ip firewall raw remove [find where comment~"^MBL:"]
-/ip firewall address-list remove [find where list="mbl-a"]
-/ip firewall address-list remove [find where list="mbl-b"]
+:local na [:len [/ip firewall address-list find where list="mbl-a"]]
+:local nb [:len [/ip firewall address-list find where list="mbl-b"]]
+:local active "mbl-a"
+:if ($nb > 0 && $na = 0) do={ :set active "mbl-b" }
+:if ($na > 0 && $nb > 0 && $prevList = "mbl-b") do={ :set active "mbl-b" }
 # mbl-allow is kept as is (user entries and previous "MBL: admin" entries).
 
 # --------------------------------------------------- 4. admin allowlist
@@ -101,21 +109,50 @@
 :global mblBoot
 :global mblTarget
 :global mblImportOk
+:global mblLastOk
+# Rename file $1 to $2 (/file set name=), falling back to copy + remove.
+# Run through :parse so a release lacking a command fails at run time,
+# not when the whole script is parsed. Returns true on success.
+:local mblMove do={
+  :do {
+    :local f [:parse ("/file set [find where name=\"" . $1 . "\"] name=\"" . $2 . "\"")]
+    $f
+  } on-error={
+    :do {
+      :local f [:parse ("/file copy [find where name=\"" . $1 . "\"] name=\"" . $2 . "\"")]
+      $f
+      /file remove [find where name=$1]
+    } on-error={}
+  }
+  :delay 1s
+  :return ([:len [/file find where name=$2]] > 0)
+}
 :local boot ($mblBoot = true)
 :set mblBoot false
 :if ($mblRunning = true) do={
   :log warning "MBL: update already running, skipped"
 } else={
   :set mblRunning true
+  :set mblLastOk false
   # Every failure path logs, cleans up and raises :error, caught below so
   # that the lock is always released.
   :do {
+    # Devices with a flash/ directory only keep flash/ across reboots.
+    :local dir ""
+    :if ([:len [/file find where name="flash"]] > 0) do={ :set dir "flash/" }
+    :local newFile ($dir . "mbl-new.rsc")
+    :local lastFile ($dir . "mbl-last.rsc")
+    :local tmpFile ($dir . "mbl-tmp.rsc")
     # ---- source file
-    :local fname "mbl-new.rsc"
+    :local fname $newFile
     :if ($boot) do={
-      :set fname "mbl-last.rsc"
+      :set fname $lastFile
+      # an interrupted boot-copy update may have left only the temp copy
+      :if ([:len [/file find where name=$fname]] = 0 && [:len [/file find where name=$tmpFile]] > 0) do={
+        :set fname $tmpFile
+      }
       :if ([:len [/file find where name=$fname]] = 0) do={
-        :log warning "MBL: boot: no $fname yet, nothing to load"
+        :log warning "MBL: boot: no $lastFile yet, nothing to load"
         :error "MBL: abort"
       }
     } else={
@@ -175,22 +212,26 @@
     /ip firewall address-list remove [find where list=$old]
 
     # ---- keep the new file as the boot copy
-    # Rename via /file set name=, else /file copy. Both run through :parse
-    # so a release lacking them fails here at run time, not at parse time.
+    # new -> tmp first; the old boot copy is only removed once tmp exists,
+    # so a valid boot copy (last or tmp) is never lost.
     :if (!$boot) do={
-      /file remove [find where name="mbl-last.rsc"]
-      :do {
-        :local mv [:parse "/file set [find where name=\"mbl-new.rsc\"] name=\"mbl-last.rsc\""]
-        $mv
-      } on-error={
-        :do {
-          :local cp [:parse "/file copy [find where name=\"mbl-new.rsc\"] name=\"mbl-last.rsc\""]
-          $cp
-          /file remove [find where name="mbl-new.rsc"]
-        } on-error={ :log warning "MBL: could not save mbl-last.rsc (boot copy)" }
+      # recover a temp copy left by an earlier failed rename
+      :if ([:len [/file find where name=$lastFile]] = 0 && [:len [/file find where name=$tmpFile]] > 0) do={
+        :local rec [$mblMove $tmpFile $lastFile]
+      }
+      /file remove [find where name=$tmpFile]
+      :if ([$mblMove $newFile $tmpFile]) do={
+        /file remove [find where name=$lastFile]
+        :if (![$mblMove $tmpFile $lastFile]) do={
+          :log warning "MBL: could not rename $tmpFile to $lastFile, boot will use $tmpFile"
+        }
+      } else={
+        /file remove [find where name=$newFile]
+        :log warning "MBL: could not save the boot copy, keeping the previous $lastFile"
       }
     }
 
+    :set mblLastOk true
     :log info "MBL: loaded $n entries into $target"
   } on-error={ :log warning "MBL: update aborted" }
   :set mblRunning false
@@ -219,25 +260,42 @@
   on-event={:global mblBoot true; /system script run mbl-update; :delay 60s; /system script run mbl-update}
 
 # ------------------------------------------------- 7. raw rules (at the top)
+# Drop rules point at $active (see step 3); mbl-update switches them later.
 :local existing [/ip firewall raw find]
 :if ([:len $existing] = 0) do={
   /ip firewall raw add chain=prerouting src-address-list=mbl-allow action=accept comment="MBL: allow-in"
   /ip firewall raw add chain=prerouting dst-address-list=mbl-allow action=accept comment="MBL: allow-out"
-  /ip firewall raw add chain=prerouting in-interface-list=WAN src-address-list=mbl-a action=drop comment="MBL: in"
-  /ip firewall raw add chain=prerouting in-interface-list=LAN dst-address-list=mbl-a action=drop log=yes log-prefix="MBL-OUT" comment="MBL: out"
-  /ip firewall raw add chain=output dst-address-list=mbl-a action=drop comment="MBL: router-out"
+  /ip firewall raw add chain=prerouting in-interface-list=WAN src-address-list=$active action=drop comment="MBL: in"
+  /ip firewall raw add chain=prerouting in-interface-list=LAN dst-address-list=$active action=drop log=yes log-prefix="MBL-OUT" comment="MBL: out"
+  /ip firewall raw add chain=output dst-address-list=mbl-allow action=accept comment="MBL: allow-router-out"
+  /ip firewall raw add chain=output dst-address-list=$active action=drop comment="MBL: router-out"
 } else={
   # Each rule goes just before the user's first rule, so ours keep this order.
   :local anchor ($existing->0)
   /ip firewall raw add chain=prerouting src-address-list=mbl-allow action=accept comment="MBL: allow-in" place-before=$anchor
   /ip firewall raw add chain=prerouting dst-address-list=mbl-allow action=accept comment="MBL: allow-out" place-before=$anchor
-  /ip firewall raw add chain=prerouting in-interface-list=WAN src-address-list=mbl-a action=drop comment="MBL: in" place-before=$anchor
-  /ip firewall raw add chain=prerouting in-interface-list=LAN dst-address-list=mbl-a action=drop log=yes log-prefix="MBL-OUT" comment="MBL: out" place-before=$anchor
-  /ip firewall raw add chain=output dst-address-list=mbl-a action=drop comment="MBL: router-out" place-before=$anchor
+  /ip firewall raw add chain=prerouting in-interface-list=WAN src-address-list=$active action=drop comment="MBL: in" place-before=$anchor
+  /ip firewall raw add chain=prerouting in-interface-list=LAN dst-address-list=$active action=drop log=yes log-prefix="MBL-OUT" comment="MBL: out" place-before=$anchor
+  /ip firewall raw add chain=output dst-address-list=mbl-allow action=accept comment="MBL: allow-router-out" place-before=$anchor
+  /ip firewall raw add chain=output dst-address-list=$active action=drop comment="MBL: router-out" place-before=$anchor
 }
 
 # -------------------------------------------------------- 8. first load
-/system script run mbl-update
-/file remove [find where name="install.rsc"]
-:log info "MBL: installed"
+:global mblRunning
+:global mblLastOk
+:set mblLastOk false
+:if ($mblRunning = true) do={
+  :put "MBL: WARNING first load skipped: another mbl-update holds the lock. If none is running, clear it with  :global mblRunning false  and run  /system script run mbl-update"
+  :log warning "MBL: first load skipped, lock mblRunning is set (clear with :global mblRunning false)"
+} else={
+  /system script run mbl-update
+}
+/file remove [find where name="install.rsc" or name="flash/install.rsc"]
+:if ($mblLastOk = true) do={
+  :put "MBL: installed"
+  :log info "MBL: installed"
+} else={
+  :put "MBL: WARNING installed, but the first load failed or was skipped. See /log print where message~\"MBL\""
+  :log warning "MBL: installed, but the first load failed or was skipped"
+}
 }
