@@ -15,9 +15,9 @@
 # ---------------------------------------------------------------- settings
 # Blocklist URL. Forks: change this line only.
 :local mblUrl "https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/lists/blocklist.rsc"
-# Minimum RouterOS version (major.minor).
-# TODO(Task 9): confirm on CHR. 7.21 = first release with the per-service
-# built-in CA store (/certificate settings builtin-trust-store).
+# Minimum RouterOS version (major.minor). 7.21 is the first release with the
+# per-service built-in CA store (/certificate settings builtin-trust-store,
+# 7.21 changelog). Tested on CHR 7.24.5.
 :local mblMinVersion "7.21"
 
 # "7.21.3 (stable)" -> 7021 ; "7.19rc2" -> 7019
@@ -78,9 +78,11 @@
 /ip firewall raw remove [find where comment~"^MBL:"]
 :local na [:len [/ip firewall address-list find where list="mbl-a"]]
 :local nb [:len [/ip firewall address-list find where list="mbl-b"]]
-:local active "mbl-a"
-:if ($nb > 0 && $na = 0) do={ :set active "mbl-b" }
-:if ($na > 0 && $nb > 0 && $prevList = "mbl-b") do={ :set active "mbl-b" }
+# active = the list with entries (the previous one if both have entries).
+# On a clean install both are empty: active = mbl-b, so the first load goes
+# into mbl-a and the next update into mbl-b.
+:local active "mbl-b"
+:if ($na > 0 && ($nb = 0 || $prevList != "mbl-b")) do={ :set active "mbl-a" }
 # mbl-allow is kept as is (user entries and previous "MBL: admin" entries).
 
 # --------------------------------------------------- 4. admin allowlist
@@ -179,6 +181,27 @@
       :error "MBL: abort"
     }
 
+    # ---- header: refuse anything that is not a MikrotikBlockList file
+    # (e.g. an HTML error page) before importing it. /file read goes through
+    # :parse; if a release lacks it the check is skipped (import still needs
+    # the mblImportOk footer).
+    :local gen "unknown"
+    :local hdr ""
+    :do {
+      :local rd [:parse (":return [/file read file=\"" . $fname . "\" offset=0 chunk-size=300 as-value]")]
+      :local r [$rd]
+      :set hdr ($r->"data")
+    } on-error={}
+    :if ([:len $hdr] > 0) do={
+      :if ([:pick $hdr 0 19] != "# MikrotikBlockList") do={
+        :if (!$boot) do={ /file remove [find where name=$fname] }
+        :log error "MBL: $fname is not a MikrotikBlockList file, list not changed"
+        :error "MBL: abort"
+      }
+      :local gp [:find $hdr "generated: "]
+      :if ([:typeof $gp] = "num") do={ :set gen [:pick $hdr ($gp + 11) ($gp + 31)] }
+    }
+
     # ---- import into the list the rules are NOT using
     :local target "mbl-a"
     :local inRule [/ip firewall raw find where comment="MBL: in"]
@@ -232,7 +255,7 @@
     }
 
     :set mblLastOk true
-    :log info "MBL: loaded $n entries into $target"
+    :log info "MBL: loaded $n entries into $target (list generated $gen)"
   } on-error={ :log warning "MBL: update aborted" }
   :set mblRunning false
 }
