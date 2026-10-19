@@ -73,6 +73,14 @@ It prints `MBL: installed` when the first list is loaded (about 10 seconds). The
 idempotent: run it again at any time to upgrade or repair; nothing is duplicated and your
 allowlist is kept.
 
+> [!TIP]
+> **Certificate error on the one-liner?** On RouterOS 7.21–7.23, or with a customised trust
+> store, the built-in CA store may not cover `fetch` yet, so the very first download (before the
+> installer can fix it) fails. Check the current value with `/certificate settings print`, then
+> run `/certificate settings set builtin-trust-store=fetch` — or add `fetch` to the existing
+> value, e.g. `dns,www` becomes `builtin-trust-store=fetch,dns,www` — and paste the one-liner
+> again.
+
 > [!NOTE]
 > To validate the HTTPS certificate of GitHub, the installer adds the `fetch` component to
 > `/certificate settings builtin-trust-store` (RouterOS' built-in CA store), unless it is already
@@ -116,7 +124,9 @@ Plus:
 ```
 
 An `MBL-OUT` entry means a device on your network tried to talk to a known C2 or malicious host:
-worth checking that device.
+worth checking that device. Only that outbound LAN rule (`MBL: out`) logs; inbound drops
+(`MBL: in`) and the router's own blocked traffic (`MBL: router-out`) are not logged, so check
+them with the counters above.
 
 ## Allowlist
 
@@ -126,7 +136,9 @@ Something you need is blocked? Add it to `mbl-allow` (an address or a CIDR):
 /ip firewall address-list add list=mbl-allow address=203.0.113.10 comment="my office"
 ```
 
-Entries you add are never removed by updates, reinstalls or the uninstaller.
+Entries you add are never removed by updates or reinstalls. The uninstaller removes only
+`mbl-allow` entries whose comment is exactly `MBL: admin` (the ones the installer adds), so do not
+use that comment for your own entries.
 
 ## Uninstall
 
@@ -281,11 +293,22 @@ la allowlist `mbl-allow` (con las IPs de administración actuales como `MBL: adm
 `mbl-last.rsc` al arrancar). Además activa el componente `fetch` en el almacén de certificados
 integrado (`builtin-trust-store`). Se puede volver a ejecutar sin duplicar nada.
 
+> [!TIP]
+> **¿Error de certificado en el comando?** En RouterOS 7.21–7.23, o con un almacén de confianza
+> personalizado, puede que el almacén integrado aún no cubra `fetch` y falle la primera descarga
+> (antes de que el instalador lo arregle). Mira el valor con `/certificate settings print` y
+> ejecuta `/certificate settings set builtin-trust-store=fetch`, o añade `fetch` al valor actual
+> (p. ej. `dns,www` pasa a `builtin-trust-store=fetch,dns,www`); después repite el comando.
+
 ### Allowlist
 
 ```routeros
 /ip firewall address-list add list=mbl-allow address=203.0.113.10 comment="mi oficina"
 ```
+
+Las actualizaciones y reinstalaciones nunca borran tus entradas. El desinstalador solo borra las
+entradas de `mbl-allow` con el comentario exacto `MBL: admin` (las que añade el instalador): no
+uses ese comentario en las tuyas.
 
 ### Ver bloqueos
 
@@ -296,6 +319,8 @@ integrado (`builtin-trust-store`). Se puede volver a ejecutar sin duplicar nada.
 ```
 
 `MBL-OUT` indica que un equipo de tu LAN intentó conectar con un host de la lista: conviene revisarlo.
+Solo registra esa regla de salida de la LAN (`MBL: out`); lo bloqueado de entrada (`MBL: in`) y el
+tráfico propio del router (`MBL: router-out`) no se registran: míralos en los contadores.
 
 ### Desinstalación
 
@@ -303,7 +328,8 @@ integrado (`builtin-trust-store`). Se puede volver a ejecutar sin duplicar nada.
 /tool fetch url="https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/main/routeros/uninstall.rsc" check-certificate=yes; /import uninstall.rsc
 ```
 
-Borra solo lo que creó el instalador y conserva tus entradas de `mbl-allow`. No revierte el
+Borra solo lo que creó el instalador y conserva tus entradas de `mbl-allow` (salvo las que
+tengan el comentario exacto `MBL: admin`). No revierte el
 componente `fetch` de `builtin-trust-store`.
 
 Registro de pruebas: [docs/testing-chr.md](docs/testing-chr.md).
