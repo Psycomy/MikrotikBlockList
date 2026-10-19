@@ -1,0 +1,68 @@
+name: build
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m unittest discover -v
+
+  publish:
+    needs: test
+    # Never publish from pull requests or from branches other than main.
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # An explicit permissions block raises the token to write, so no repo
+    # setting needs changing.
+    permissions:
+      contents: write
+    concurrency: publish
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Exit code 1 (safety checks failed) fails the step and therefore the
+      # job, so nothing is published.
+      - name: Build
+        run: >
+          python -m mbl build
+          --sources sources.toml
+          --allowlist allowlist.txt
+          --out dist
+          --previous-stats "https://raw.githubusercontent.com/${{ github.repository }}/lists/stats.json"
+
+      # The lists branch is orphan and overwritten with a single commit.
+      - name: Publish to lists branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        working-directory: dist
+        run: |
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          echo "::add-mask::$auth"
+          git init -b lists
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "lists: $(date -u +%Y-%m-%d)"
+          git -c "http.extraheader=Authorization: Basic ${auth}" \
+            push -f "https://github.com/${REPO}" lists
