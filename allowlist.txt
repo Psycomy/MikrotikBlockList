@@ -1,0 +1,2 @@
+# Networks that must never be blocked (one IPv4 address or CIDR per line).
+# Lines starting with # and blank lines are ignored.

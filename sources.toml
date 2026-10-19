@@ -1,0 +1,113 @@
+# Source catalog. Formats: plain, dshield, threatfox_csv, c2intel_csv. Categories: attack, c2.
+# Home / non-commercial use only: non-commercial licenses are accepted.
+#
+# Removed: greensnow (https://blocklist.greensnow.co/greensnow.txt) - its site states
+# "Reproduction or republication strictly prohibited"; this project republishes the data.
+
+[[source]]
+name = "spamhaus-drop"
+url = "https://www.spamhaus.org/drop/drop.txt"
+format = "plain"
+category = "attack"
+required = true
+license_note = "Free under Spamhaus DROP terms; no explicit redistribution grant - home use"
+
+[[source]]
+name = "feodo"
+url = "https://feodotracker.abuse.ch/downloads/ipblocklist_recommended.txt"
+format = "plain"
+category = "c2"
+license_note = "abuse.ch CC0, commercial and non-commercial use allowed"
+
+[[source]]
+name = "et-compromised"
+url = "https://rules.emergingthreats.net/blockrules/compromised-ips.txt"
+format = "plain"
+category = "attack"
+license_note = "Emerging Threats open rules, BSD-style terms"
+
+[[source]]
+name = "et-block"
+url = "https://rules.emergingthreats.net/fwrules/emerging-Block-IPs.txt"
+format = "plain"
+category = "attack"
+license_note = "Emerging Threats open rules, BSD-style terms (file header)"
+
+[[source]]
+name = "cins"
+url = "https://cinsscore.com/list/ci-badguys.txt"
+format = "plain"
+category = "attack"
+license_note = "CINS Army: usable 'in any way you see fit'; no formal license"
+
+[[source]]
+name = "blocklist-de"
+url = "https://lists.blocklist.de/lists/all.txt"
+format = "plain"
+category = "attack"
+license_note = "unknown - check source terms"
+
+[[source]]
+name = "bruteforceblocker"
+url = "https://danger.rulez.sk/projects/bruteforceblocker/blist.php"
+format = "plain"
+category = "attack"
+license_note = "unknown - check source terms"
+
+[[source]]
+name = "dshield"
+url = "https://www.dshield.org/block.txt"
+format = "dshield"
+category = "attack"
+license_note = "CC BY-NC-SA (non-commercial only, attribution)"
+
+[[source]]
+name = "stopforumspam"
+url = "https://www.stopforumspam.com/downloads/toxic_ip_cidr.txt"
+format = "plain"
+category = "attack"
+license_note = "Non-commercial use only"
+
+[[source]]
+name = "ipsum-3"
+url = "https://raw.githubusercontent.com/stamparm/ipsum/master/levels/3.txt"
+format = "plain"
+category = "attack"
+license_note = "The Unlicense (public domain)"
+
+[[source]]
+name = "binarydefense"
+url = "https://www.binarydefense.com/banlist.txt"
+format = "plain"
+category = "attack"
+license_note = "Public use only, no commercial use (file header)"
+
+[[source]]
+name = "threatfox"
+url = "https://threatfox.abuse.ch/export/csv/ip-port/recent/"
+format = "threatfox_csv"
+category = "c2"
+license_note = "abuse.ch fair use, free; commercial use may need paid API"
+
+[[source]]
+name = "c2intel"
+url = "https://raw.githubusercontent.com/drb-ra/C2IntelFeeds/master/feeds/IPC2s-30day.csv"
+format = "c2intel_csv"
+category = "c2"
+license_note = "CC BY-NC-SA 4.0 (non-commercial only, attribution)"
+
+[[source]]
+name = "datashield"
+url = "https://raw.githubusercontent.com/duggytuxy/Data-Shield_IPv4_Blocklist/main/prod_data-shield_ipv4_blocklist.txt"
+format = "plain"
+category = "attack"
+enabled = false
+license_note = "Repository GPLv3; optional, disabled by default"
+
+[[source]]
+name = "abuseipdb-s100"
+url = "https://raw.githubusercontent.com/borestad/blocklist-abuseipdb/main/abuseipdb-s100-7d.ipv4"
+format = "plain"
+category = "attack"
+enabled = false
+license_note = "No license stated; AbuseIPDB data used with permission; optional"
