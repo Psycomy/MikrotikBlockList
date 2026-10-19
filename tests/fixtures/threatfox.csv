@@ -1,0 +1,16 @@
+################################################################
+# ThreatFox IOCs: recent ip-port - CSV format                  #
+# Last updated: 2026-10-19 13:14:46 UTC                        #
+#                                                              #
+# Terms Of Use: https://threatfox.abuse.ch/faq/#tos            #
+# For questions please contact threatfox [at] abuse.ch         #
+################################################################
+#
+# "first_seen_utc","ioc_id","ioc_value","ioc_type","threat_type","fk_malware","malware_alias","malware_printable","last_seen_utc","confidence_level","is_compromised","reference","tags","anonymous","reporter"
+"2026-10-19 13:14:46", "1974323", "96.62.71.6:8090", "ip:port", "botnet_cc", "unknown", "None", "Unknown malware", "", "75", "False", "https://bazaar.abuse.ch/sample/71d9c3ee5a1deab2f908c269b72242ea0820b69b871ad9ffe7d35f1091fdabd1/", "None", "0", "abuse_ch"
+"2026-10-19 13:06:02", "1974315", "45.198.224.89:48986", "ip:port", "botnet_cc", "elf.moobot", "None", "MooBot", "", "75", "False", "https://bazaar.abuse.ch/sample/dc92065072ed7815c08f402351c3619c71345005aed0781abb9981559a6291c8/", "MooBot", "0", "abuse_ch"
+"2026-10-19 13:05:06", "1974311", "43.242.128.210:8083", "ip:port", "botnet_cc", "win.vshell", "None", "VShell", "", "100", "True", "None", "vshell", "1", "anonymous"
+"2026-10-19 13:05:05", "1974309", "8.163.76.203:8888", "ip:port", "botnet_cc", "unknown", "None", "Unknown malware", "", "100", "True", "None", "supershell", "1", "anonymous"
+"2026-10-19 13:05:05", "1974310", "39.104.48.247:4444", "ip:port", "botnet_cc", "win.vshell", "None", "VShell", "", "100", "True", "None", "vshell", "1", "anonymous"
+"2026-10-19 13:05:04", "1974308", "8.163.76.203:22", "ip:port", "botnet_cc", "unknown", "None", "Unknown malware", "", "100", "True", "None", "supershell", "1", "anonymous"
+"2026-10-19 13:01:55", "1974260", "106.12.190.248:31337", "ip:port", "botnet_cc", "win.sliver", "None", "Sliver", "", "100", "False", "", "shodan,sliver", "0", "orlof_v"
