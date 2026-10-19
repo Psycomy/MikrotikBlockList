@@ -44,7 +44,9 @@ flowchart LR
    repository [`allowlist.txt`](allowlist.txt) and merges overlapping networks.
 2. Safety checks refuse to publish a broken list: between 5,000 and 150,000 entries, no drop of
    more than 50% and no growth of more than 2x from the previous list, and the required source
-   (Spamhaus DROP) must succeed.
+   (Spamhaus DROP) must succeed. For an expected jump (e.g. a new source), a maintainer can run
+   the workflow by hand (*Actions → build → Run workflow* on `main`) with **allow_growth**
+   ticked, which skips only the 2x check (locally: `python -m mbl build --allow-growth`).
 3. The result goes to the orphan [`lists`](https://github.com/Psycomy/MikrotikBlockList/tree/lists)
    branch, overwritten each time with a single commit.
 4. Your router fetches `blocklist.rsc` over HTTPS (`check-certificate=yes`), validates it and loads it
@@ -127,6 +129,10 @@ An `MBL-OUT` entry means a device on your network tried to talk to a known C2 or
 worth checking that device. Only that outbound LAN rule (`MBL: out`) logs; inbound drops
 (`MBL: in`) and the router's own blocked traffic (`MBL: router-out`) are not logged, so check
 them with the counters above.
+
+If the list on GitHub stops being updated (e.g. the Action is disabled), the router keeps the
+last list it loaded and logs `MBL: list is N days old` on each update once it is more than 3
+days old.
 
 ## Allowlist
 
@@ -321,6 +327,14 @@ uses ese comentario en las tuyas.
 `MBL-OUT` indica que un equipo de tu LAN intentó conectar con un host de la lista: conviene revisarlo.
 Solo registra esa regla de salida de la LAN (`MBL: out`); lo bloqueado de entrada (`MBL: in`) y el
 tráfico propio del router (`MBL: router-out`) no se registran: míralos en los contadores.
+
+Si la lista de GitHub deja de actualizarse (p. ej. la Action está desactivada), el router mantiene
+la última lista cargada y, cuando tiene más de 3 días, registra `MBL: list is N days old` en cada
+actualización.
+
+Para los mantenedores: el workflow rechaza publicar si el total crece más del doble. Ante un salto
+esperado (p. ej. una fuente nueva), ejecútalo a mano (*Actions → build → Run workflow* en `main`)
+marcando **allow_growth**, que solo omite esa comprobación (en local: `python -m mbl build --allow-growth`).
 
 ### Desinstalación
 

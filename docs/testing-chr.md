@@ -162,3 +162,20 @@ validado, si `free-hdd-space` > 2 × tamaño. CHR 7.24.5, sin `flash/`, URL `lis
 | Extra: `flash/` simulado (`/file add type=directory name=flash`) | OK: la descarga queda en la raíz, se copia a `flash/mbl-last.rsc` y `mbl-new.rsc` se borra; el modo boot carga desde `flash/mbl-last.rsc`. Solo prueba la lógica del script (en CHR la raíz no es RAM); la rama "sin espacio" no se pudo forzar. Directorio borrado después |
 
 Estado final: instalado con `lists-test`, reglas en `mbl-b` (32242 entradas).
+
+## 6. Aviso de lista antigua (2026-10-19)
+
+Cambio probado: tras una carga correcta, `mbl-update` compara la fecha de `# generated:` con
+`/system clock get date` y registra `MBL: list is N days old` si pasan más de 3 días. CHR 7.24.5,
+`install.rsc` subido por scp (URL `lists`). Las listas antiguas son copias de `blocklist.rsc` con la
+cabecera editada, subidas como `mbl-last.rsc` y cargadas en modo boot (`:global mblBoot true`).
+
+| Prueba | Resultado |
+|---|---|
+| `/import install.rsc` con la lista actual (generada hoy) | OK: `loaded 32557 entries into mbl-b` + `installed`, sin aviso |
+| Lista con `generated: 2026-10-10` | OK: se carga y registra `MBL: list is 9 days old` |
+| Lista con `generated: 2026-10-16` (justo 3 días) | OK: se carga, sin aviso |
+| Lista con `generated: 2026-09-28` (cruza mes) | OK: `MBL: list is 21 days old` |
+| `/system script run mbl-update` normal después | OK: lista actual en `mbl-b`, sin aviso; `mbl-last.rsc` vuelve a la cabecera actual; lock liberado (`mblRunning=false`) |
+
+Estado final: instalado con `lists`, reglas en `mbl-b` (32557 entradas).

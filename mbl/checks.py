@@ -14,8 +14,13 @@ def safety_errors(
     max_total: int = MAX_TOTAL,
     max_drop: float = MAX_DROP,
     max_growth: float = MAX_GROWTH,
+    allow_growth: bool = False,
 ) -> list[str]:
-    """Return a list of problems; an empty list means it is safe to publish."""
+    """Return a list of problems; an empty list means it is safe to publish.
+
+    allow_growth skips only the growth check (for an expected jump, such as
+    a new source); every other check still applies.
+    """
     errors: list[str] = []
     if failed_required:
         errors.append("required sources failed: " + ", ".join(failed_required))
@@ -27,7 +32,7 @@ def safety_errors(
         errors.append(
             f"total {total} dropped more than {max_drop:.0%} from previous {previous_total}"
         )
-    if previous_total and total > previous_total * max_growth:
+    if not allow_growth and previous_total and total > previous_total * max_growth:
         errors.append(
             f"total {total} grew more than {max_growth:g}x from previous {previous_total}"
         )

@@ -49,6 +49,12 @@ class SafetyErrorsTest(unittest.TestCase):
     def test_custom_max_growth(self):
         self.assertEqual(len(safety_errors(45001, 30000, [], max_growth=1.5)), 1)
 
+    def test_allow_growth_skips_only_growth_check(self):
+        self.assertEqual(safety_errors(60001, 30000, [], allow_growth=True), [])
+        self.assertEqual(len(safety_errors(150001, 30000, [], allow_growth=True)), 1)
+        self.assertEqual(len(safety_errors(10000, 30000, [], allow_growth=True)), 1)
+        self.assertEqual(len(safety_errors(60001, 30000, ["x"], allow_growth=True)), 1)
+
     def test_multiple_problems_multiple_errors(self):
         errors = safety_errors(1000, 60000, ["spamhaus-drop"])
         self.assertEqual(len(errors), 3)
