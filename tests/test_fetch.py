@@ -1,7 +1,10 @@
+import csv
 import threading
 import unittest
+from unittest import mock
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
+from mbl import parsers
 from mbl.fetch import USER_AGENT, fetch_all
 from mbl.sources import Source
 
@@ -85,6 +88,23 @@ class FetchTests(unittest.TestCase):
         self.assertIsNone(res[0].error)
         self.assertIsNotNone(res[1].error)
 
+    def test_parser_exception_marks_source_failed(self):
+        srcs = [Source("bad", self.base + "/ok", "threatfox_csv", "c2"),
+                Source("good", self.base + "/ok", "plain", "attack")]
+        real_parse = parsers.parse
+
+        def fake_parse(fmt, text):
+            if fmt == "threatfox_csv":
+                raise csv.Error("field larger than field limit")
+            return real_parse(fmt, text)
+
+        with mock.patch("mbl.fetch.parse", side_effect=fake_parse):
+            res = fetch_all(srcs, timeout=2, retries=0, backoff=0)
+        self.assertEqual([r.source.name for r in res], ["bad", "good"])
+        self.assertEqual(res[0].networks, [])
+        self.assertEqual(res[0].error, "Error: field larger than field limit")
+        self.assertIsNone(res[1].error)
+        self.assertEqual(len(res[1].networks), 1)
 
 if __name__ == "__main__":
     unittest.main()

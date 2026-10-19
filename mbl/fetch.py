@@ -42,9 +42,9 @@ def _download(url: str, timeout: float, retries: int, backoff: float) -> str:
 def _fetch_one(source: Source, timeout: float, retries: int, backoff: float) -> SourceResult:
     try:
         text = _download(source.url, timeout, retries, backoff)
-    except Exception as exc:  # any failure marks this source as failed
+        parsed = parse(source.format, text)
+    except Exception as exc:  # any download or parse failure marks this source as failed
         return SourceResult(source, error=f"{type(exc).__name__}: {exc}")
-    parsed = parse(source.format, text)
     if not parsed.networks:
         return SourceResult(source, invalid=parsed.invalid, error="no valid entries")
     return SourceResult(source, parsed.networks, parsed.invalid)
