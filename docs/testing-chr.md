@@ -72,45 +72,72 @@ Dile a Claude la **IP del CHR** (la de ether1, alcanzable desde este equipo) y c
 
 Rellena *Estado* con OK / FALLO.
 
+**Resultado del 2026-10-19:**
+
+- **Entorno:** CHR **RouterOS 7.24.5 stable** (256 MiB, 1 vCPU, una sola NIC: `ether1` = WAN; LAN = bridge vacío `bridge-lan`).
+- **Lista:** de prueba, con 32242 entradas, de la rama `lists-test`.
+- **Scripts:** los de los commits `fix(routeros)` de la Tarea 9.
+- **Casos:** 13/13 OK. La parte "host LAN" del caso 3 no se puede verificar sin un host LAN.
+- **Versión mínima:** **7.21**. Viene de la documentación (`builtin-trust-store` con el componente `fetch`, changelog de 7.21); en CHR solo se ha probado 7.24.5.
+
 | # | Caso | Cómo | Resultado esperado | Estado |
 |---|------|------|--------------------|--------|
-| 1 | Instalación limpia | Fetch + `/import install.rsc` | 5 reglas raw `MBL:` (+ allow-router-out), 2 schedulers (`mbl-daily`, `mbl-boot`), script `mbl-update`; `mbl-a` con >= 1000 entradas | |
-| 2 | Bloqueo entrante | Añadir a mano una IP de prueba a la lista activa; generar tráfico desde WAN (`/tool fetch` desde un host) o mirar contadores | `MBL: in` cuenta paquetes | |
-| 3 | Bloqueo saliente | `ping` desde un host LAN a una IP de la lista; `/ping` desde el router | Log `MBL-OUT`; el `/ping` del router se bloquea por `MBL: router-out` | |
-| 4 | Actualización | `/system script run mbl-update` | Las reglas pasan a `mbl-b`; `mbl-a` queda vacía | |
-| 5 | Fichero truncado | Servir un `.rsc` sin el pie | Se mantiene la lista anterior; error en el log | |
-| 6 | URL caída | Apuntar a una URL inexistente y ejecutar | Se mantiene la lista anterior | |
-| 7 | Ejecución concurrente | Dos `/system script run mbl-update` seguidos | El segundo sale por el lock | |
-| 8 | Reinicio con red | `/system reboot` con WAN | La lista se carga desde `mbl-last.rsc` en segundos y luego se actualiza | |
-| 9 | Arranque sin red | `ether1` desactivada + reinicio | La lista se carga desde `mbl-last.rsc` | |
-| 10 | Reinstalación | Volver a importar `install.rsc` | Nada duplicado; se conserva `MBL: admin` (y la lista activa) | |
-| 11 | IP de gestión listada | Poner la IP del admin en la lista activa | Se mantiene el acceso SSH | |
-| 12 | Desinstalación | `/import uninstall.rsc` | No queda nada `mbl`/`MBL:`; la config del usuario intacta | |
-| 13 | Rendimiento | `/system resource print` antes y después, con la lista real; medir el tiempo de importación | Tiempo y RAM anotados (aprox. 32k entradas) | |
+| 1 | Instalación limpia | Fetch + `/import install.rsc` | 5 reglas raw `MBL:` (+ allow-router-out), 2 schedulers (`mbl-daily`, `mbl-boot`), script `mbl-update`; `mbl-a` con >= 1000 entradas | OK (7.24.5): 6 reglas `MBL:` arriba del todo (antes de las del usuario), 2 schedulers, `mbl-update`; `mbl-a` = 32242 |
+| 2 | Bloqueo entrante | Añadir a mano una IP de prueba a la lista activa; generar tráfico desde WAN (`/tool fetch` desde un host) o mirar contadores | `MBL: in` cuenta paquetes | OK: con `MBL: router-out` desactivada un momento y 9.9.9.9 en la lista activa, las respuestas al `/ping` entran por WAN y `MBL: in` cuenta 2 paquetes |
+| 3 | Bloqueo saliente | `ping` desde un host LAN a una IP de la lista; `/ping` desde el router | Log `MBL-OUT`; el `/ping` del router se bloquea por `MBL: router-out` | OK (router) / no verificable sin host LAN: `/ping` a 9.9.9.9 y a 1.7.51.205 = 100 % de pérdida, `MBL: router-out` cuenta 5 paquetes. La regla `MBL: out` (LAN, `log=yes`, `MBL-OUT`) se acepta y está bien configurada, pero el CHR no tiene host LAN |
+| 4 | Actualización | `/system script run mbl-update` | Las reglas pasan a `mbl-b`; `mbl-a` queda vacía | OK: reglas a `mbl-b`, `mbl-a` = 0, `mbl-last.rsc` renovado; ~19 s en total |
+| 5 | Fichero truncado | Servir un `.rsc` sin el pie | Se mantiene la lista anterior; error en el log | OK: descarga cortada sin pie (todas las entradas, `complete=false`), cortada a media línea (16990 entradas) y fichero truncado como `mbl-last.rsc` en modo boot. En los tres casos se mantiene la lista activa y aparece `MBL: import ... failed` en el log. Además, un fichero que no es una lista MBL se rechaza antes del import y uno < 100000 bytes da `too small` |
+| 6 | URL caída | Apuntar a una URL inexistente y ejecutar | Se mantiene la lista anterior | OK: con 404 en GitHub y con un host inexistente aparece `MBL: download failed`; lista y reglas sin cambios |
+| 7 | Ejecución concurrente | Dos `/system script run mbl-update` seguidos | El segundo sale por el lock | OK: el segundo run registra `MBL: update already running, skipped`; el primero termina bien |
+| 8 | Reinicio con red | `/system reboot` con WAN | La lista se carga desde `mbl-last.rsc` en segundos y luego se actualiza | OK: con 8 s de uptime ya hay 32242 entradas cargadas desde `mbl-last.rsc`; ~80 s después del arranque se descarga una lista nueva y se pasa a la otra lista |
+| 9 | Arranque sin red | `ether1` desactivada + reinicio | La lista se carga desde `mbl-last.rsc` | OK (simulado): sin ruta por defecto (`add-default-route=no`; rutas estáticas solo hacia el PC de gestión) y reinicio: carga desde `mbl-last.rsc` en segundos; el run de +60 s da `download failed` y se mantiene la lista |
+| 10 | Reinstalación | Volver a importar `install.rsc` | Nada duplicado; se conserva `MBL: admin` (y la lista activa) | OK: 2 schedulers y 1 script, sin duplicados; `MBL: admin` sin duplicar (misma creation-time) y la entrada del usuario en `mbl-allow` se conserva. Con las dos listas pobladas, las reglas se recrean sobre la activa previa |
+| 11 | IP de gestión listada | Poner la IP del admin en la lista activa | Se mantiene el acceso SSH | OK: con 192.168.100.4 (IP de gestión) en la lista activa, SSH sigue funcionando gracias a `MBL: allow-in` (dead-man de 3 min como red de seguridad) |
+| 12 | Desinstalación | `/import uninstall.rsc` | No queda nada `mbl`/`MBL:`; la config del usuario intacta | OK: 0 reglas `MBL:`, 0 schedulers o scripts `mbl`, sin `mbl-a`/`mbl-b`/`MBL: admin`, sin ficheros `mbl-*` ni `uninstall.rsc`, sin globals `mbl*`. Se conservan la regla raw, el script, las address-lists y la global del usuario, y la entrada propia en `mbl-allow` |
+| 13 | Rendimiento | `/system resource print` antes y después, con la lista real; medir el tiempo de importación | Tiempo y RAM anotados (aprox. 32k entradas) | OK: ver las notas de rendimiento |
 
-Notas de rendimiento: tiempo de import = ______ ; RAM libre antes = ______ ; después = ______.
+Notas de rendimiento (CHR 7.24.5, 1 vCPU, 256 MiB, lista de prueba con 32242 entradas, 1.7 MB):
+
+- **Tiempo:**
+  - fetch ~1 s;
+  - import ~7 s (CPU al 100 %);
+  - borrado de la lista vieja ~8–13 s;
+  - `mbl-update` completo ~19 s;
+  - instalación limpia completa ~11 s.
+- **RAM libre:**
+  - recién arrancado y sin lista: 52.8 MiB;
+  - con la lista cargada: ~25–31 MiB (tras un reinicio con la lista cargada: 26.7 MiB);
+  - mínimo durante una actualización, con las dos listas llenas un momento: 18.9–19.9 MiB, unos 6–11 MiB por debajo del reposo.
+- **Coste:** cada lista de unas 32k entradas ocupa unos 6–10 MiB.
+
+Todo el tiempo de la actualización la protección sigue activa (la lista activa no se toca hasta el cambio de reglas).
+
+**Simulaciones.** Sin segunda NIC ni host LAN:
+
+- **Caso 9:** la red se cortó quitando la ruta por defecto, no desactivando `ether1`.
+- **Caso 5 en modo normal:** se descargó un trozo de la lista real con `http-header-field="Accept-Encoding: identity,Range: bytes=0-N"`. Esa línea se añadió temporalmente al `mbl-update` instalado.
 
 ## 4. Puntos a verificar del script (Tarea 8)
 
 | # | Punto | Estado |
 |---|-------|--------|
-| 1 | Bloque multilínea `{ ... }` en `/import`: locales, funciones y continuaciones `\` | |
-| 2 | `source={...}` guarda el cuerpo literal (`$var`), sin quejas de variables sin declarar; `get source` correcto y el reemplazo de URL con `:find`/`:pick` | |
-| 3 | Nombre exacto de `builtin-trust-store` en la versión mínima; `get` (string/array); `$ts != "all"`; sintaxis `set builtin-trust-store=fetch,...`; `check-certificate=yes` a raw.githubusercontent.com. Fijar `mblMinVersion` | |
-| 4 | Idioma `:parse` + `$f`: `:return` devuelve valor; errores en ejecución capturados por `:do on-error` | |
-| 5 | Funciones con `$1` posicional (`mblVerNum`, `mblPad`); `:while` con `[:pick $rest $e] ~ "[0-9]"` | |
-| 6 | `/user active get $s address` con `:tostr`: vacío en consola; IPv6/MAC fallan dentro de `on-error` | |
-| 7 | `/tool fetch ... check-certificate=yes` sin `as-value` bloquea hasta terminar y el fallo lo captura `on-error`; ¿hace falta/basta el delay de 2 s? | |
-| 8 | `/file get [find where name=$fname] size` devuelve bytes; `name` sin prefijo `flash/` | |
-| 9 | `/import verbose=no` desde scheduler: globals `mblTarget`/`mblImportOk` compartidos; fichero truncado deja `mblImportOk=false`; tiempo con ~32k entradas | |
-| 10 | Globals compartidos entre el scheduler (`:global mblBoot true`) y `/system script run mbl-update` | |
-| 11 | `/file set name=` y `/file copy` existen en la versión mínima; cuál se usa | |
-| 12 | `remove [find where list=...]` sobre entradas con timeout; los timeouts se pierden al reiniciar (modo boot necesario) | |
-| 13 | Reglas raw con listas aún inexistentes (`mbl-allow`, `mbl-a`); `log=yes log-prefix=` aceptado en raw | |
-| 14 | `place-before=<id interno>` en `/ip firewall raw`; las reglas quedan arriba en orden | |
-| 15 | Scheduler `start-time=HH:MM:SS` sin `start-date` corre a diario; la política `ftp,read,write,policy,test` basta (script y scheduler) | |
-| 16 | Uninstall: `where list="mbl-allow" and comment="MBL: admin"`, regex `^(flash/)?mbl-.*\.rsc$`, `/system script environment remove` | |
-| 17 | `flash/`: detección con `/file find where name="flash"`, `dst-path`, `/import file-name=flash/...`, persistencia tras reinicio (CHR no lo tiene: solo se prueba el prefijo vacío) | |
-| 18 | `mblMove`: `:parse` de cadena construida dentro de función, retorno en `:if ([$mblMove a b])` y `![...]`, `file remove [find where name=$1]`; probar rutas de recuperación forzando fallo de rename | |
-| 19 | Reinstalación con ambas listas pobladas: reglas sobre la lista activa previa y sin ventana con la activa vacía | |
-| 20 | `mblLastOk`/`mblRunning` visibles al instalador tras `/system script run` (mensaje instalado / primera carga fallida correcto) | |
+| 1 | Bloque multilínea `{ ... }` en `/import`: locales, funciones y continuaciones `\` | OK |
+| 2 | `source={...}` guarda el cuerpo literal (`$var`), sin quejas de variables sin declarar; `get source` correcto y el reemplazo de URL con `:find`/`:pick` | OK |
+| 3 | Nombre exacto de `builtin-trust-store` en la versión mínima; `get` (string/array); `$ts != "all"`; sintaxis `set builtin-trust-store=fetch,...`; `check-certificate=yes` a raw.githubusercontent.com. Fijar `mblMinVersion` | OK: `get` devuelve str (`default`, `all`, `untrusted` o `dns,www`). `current-defaults` es un array e incluye `fetch` en 7.24.5. Se probaron `dns,www`→`fetch,dns,www`, `untrusted`→`fetch`, `all` y `default` (sin cambios). Sin `fetch` en el almacén, `check-certificate=yes` falla. Mínimo **7.21** según el changelog de 7.21: «added option to configure built-in trust store» |
+| 4 | Idioma `:parse` + `$f`: `:return` devuelve valor; errores en ejecución capturados por `:do on-error` | OK |
+| 5 | Funciones con `$1` posicional (`mblVerNum`, `mblPad`); `:while` con `[:pick $rest $e] ~ "[0-9]"` | OK (`7.21.3 (stable)`→7021, `7.19rc2`→7019, `8.0beta1`→8000; hora `HH:MM:SS` con relleno) |
+| 6 | `/user active get $s address` con `:tostr`: vacío en consola; IPv6/MAC fallan dentro de `on-error` | OK: la sesión de consola da una dirección vacía; con IPv6, MAC o un duplicado, el error salta dentro de `on-error` |
+| 7 | `/tool fetch ... check-certificate=yes` sin `as-value` bloquea hasta terminar y el fallo lo captura `on-error`; ¿hace falta/basta el delay de 2 s? | OK: fetch bloquea hasta terminar; 404, DNS o certificado se capturan. El tamaño ya es correcto sin el delay; se mantiene el de 2 s, que no hace daño |
+| 8 | `/file get [find where name=$fname] size` devuelve bytes; `name` sin prefijo `flash/` | OK (num, bytes; sin `flash/` en CHR) |
+| 9 | `/import verbose=no` desde scheduler: globals `mblTarget`/`mblImportOk` compartidos; fichero truncado deja `mblImportOk=false`; tiempo con ~32k entradas | OK: globals compartidos en ambos sentidos (desde SSH y desde un scheduler); un fichero truncado deja `mblImportOk=false`; ~7 s para 32k entradas |
+| 10 | Globals compartidos entre el scheduler (`:global mblBoot true`) y `/system script run mbl-update` | OK (el `mbl-boot` real tras el reinicio) |
+| 11 | `/file set name=` y `/file copy` existen en la versión mínima; cuál se usa | OK: los dos existen en 7.24.5; se usa `/file set name=` y el copy se probó forzando un fallo. **No probado en 7.21** |
+| 12 | `remove [find where list=...]` sobre entradas con timeout; los timeouts se pierden al reiniciar (modo boot necesario) | OK: sin `mbl-boot`, tras reiniciar `mbl-a`=0 y `mbl-b`=0, así que el modo boot es necesario. `remove [find]` funciona sobre entradas dinámicas |
+| 13 | Reglas raw con listas aún inexistentes (`mbl-allow`, `mbl-a`); `log=yes log-prefix=` aceptado en raw | OK |
+| 14 | `place-before=<id interno>` en `/ip firewall raw`; las reglas quedan arriba en orden | OK: quedan arriba en el orden de la tabla, antes de las reglas del usuario |
+| 15 | Scheduler `start-time=HH:MM:SS` sin `start-date` corre a diario; la política `ftp,read,write,policy,test` basta (script y scheduler) | OK: `start-date` se rellena sola y `next-run` es mañana. La política basta: el run normal desde `mbl-boot` descarga e importa |
+| 16 | Uninstall: `where list="mbl-allow" and comment="MBL: admin"`, regex `^(flash/)?mbl-.*\.rsc$`, `/system script environment remove` | OK |
+| 17 | `flash/`: detección con `/file find where name="flash"`, `dst-path`, `/import file-name=flash/...`, persistencia tras reinicio (CHR no lo tiene: solo se prueba el prefijo vacío) | No verificable en CHR (no hay `flash/`); solo se probó el prefijo vacío |
+| 18 | `mblMove`: `:parse` de cadena construida dentro de función, retorno en `:if ([$mblMove a b])` y `![...]`, `file remove [find where name=$1]`; probar rutas de recuperación forzando fallo de rename | OK: rename normal, origen inexistente →false, `/file set` roto→copy. En el script: si solo hay `mbl-tmp.rsc`, el boot lo usa y el siguiente run normal lo recupera como `mbl-last.rsc` |
+| 19 | Reinstalación con ambas listas pobladas: reglas sobre la lista activa previa y sin ventana con la activa vacía | OK: `mbl-a` activa y `mbl-b` con 5 entradas: las reglas se recrean sobre `mbl-a` y la primera carga va a `mbl-b` |
+| 20 | `mblLastOk`/`mblRunning` visibles al instalador tras `/system script run` (mensaje instalado / primera carga fallida correcto) | OK: `installed`; con URL caída: `installed, but the first load failed`; con lock: `first load skipped` |
