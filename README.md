@@ -43,7 +43,8 @@ flowchart LR
    reserved, CGNAT and other non-global ranges (and anything broader than a /8), subtracts the networks in the
    repository [`allowlist.txt`](allowlist.txt) and merges overlapping networks.
 2. Safety checks refuse to publish a broken list: between 5,000 and 150,000 entries, no drop of
-   more than 50% from the previous list, and the required source (Spamhaus DROP) must succeed.
+   more than 50% and no growth of more than 2x from the previous list, and the required source
+   (Spamhaus DROP) must succeed.
 3. The result goes to the orphan [`lists`](https://github.com/Psycomy/MikrotikBlockList/tree/lists)
    branch, overwritten each time with a single commit.
 4. Your router fetches `blocklist.rsc` over HTTPS (`check-certificate=yes`), validates it and loads it

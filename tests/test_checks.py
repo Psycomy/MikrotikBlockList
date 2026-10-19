@@ -34,6 +34,21 @@ class SafetyErrorsTest(unittest.TestCase):
     def test_previous_total_zero_skips_drop_check(self):
         self.assertEqual(safety_errors(60000, 0, []), [])
 
+    def test_exact_double_growth_passes(self):
+        self.assertEqual(safety_errors(60000, 30000, []), [])
+
+    def test_growth_above_double_fails(self):
+        errors = safety_errors(60001, 30000, [])
+        self.assertEqual(len(errors), 1)
+        self.assertIn("grew", errors[0])
+
+    def test_growth_check_skipped_without_previous(self):
+        self.assertEqual(safety_errors(140000, None, []), [])
+        self.assertEqual(safety_errors(140000, 0, []), [])
+
+    def test_custom_max_growth(self):
+        self.assertEqual(len(safety_errors(45001, 30000, [], max_growth=1.5)), 1)
+
     def test_multiple_problems_multiple_errors(self):
         errors = safety_errors(1000, 60000, ["spamhaus-drop"])
         self.assertEqual(len(errors), 3)
