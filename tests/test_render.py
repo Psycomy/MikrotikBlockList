@@ -55,6 +55,7 @@ class RenderTest(unittest.TestCase):
                 "# MikrotikBlockList v2 - https://github.com/Psycomy/MikrotikBlockList",
                 "# For home / non-commercial use only (see source licenses in README)",
                 "# generated: 2026-10-19T04:17:00Z entries: 1",
+                "# Sources and terms: https://github.com/Psycomy/MikrotikBlockList/blob/lists/NOTICE.md",
                 ":global mblTarget",
                 "/ip firewall address-list",
                 ":global mblImportOk true",
@@ -83,6 +84,37 @@ class RenderTest(unittest.TestCase):
             updated,
             {"schemaVersion": 1, "label": "updated", "message": "2026-10-19", "color": "brightgreen"},
         )
+
+    def test_notice(self):
+        ok = Source("spamhaus-drop", "https://www.spamhaus.org/drop/drop.txt", "plain",
+                    "attack", required=True, license_note="Spamhaus DROP terms")
+        bad = Source("dshield", "https://www.dshield.org/block.txt", "dshield",
+                     "attack", license_note="CC BY-NC-SA")
+        nets = [IPv4Network("1.10.16.0/20"), IPv4Network("8.8.8.8/32")]
+        results = [SourceResult(ok, nets, 0, None),
+                   SourceResult(bad, [], 0, "HTTPError: HTTP Error 503: down")]
+        with tempfile.TemporaryDirectory() as tmp:
+            write_outputs(Path(tmp), nets, results, WHEN)
+            notice = (Path(tmp) / "NOTICE.md").read_text()
+        self.assertIn("MikrotikBlockList", notice)
+        self.assertIn("https://github.com/Psycomy/MikrotikBlockList", notice)
+        self.assertIn("For home / non-commercial use only", notice)
+        self.assertIn("third-party sources", notice)
+        self.assertIn("GPL-3.0", notice)
+        self.assertIn("2026-10-19T04:17:00Z", notice)
+        rows = [l for l in notice.splitlines() if l.startswith("| ")]
+        self.assertEqual(rows[0], "| source | url | category | license / terms | entries | error |")
+        self.assertIn("| spamhaus-drop | https://www.spamhaus.org/drop/drop.txt | attack "
+                      "| Spamhaus DROP terms | 2 |  |", rows)
+        self.assertIn("| dshield | https://www.dshield.org/block.txt | attack | CC BY-NC-SA "
+                      "| 0 | HTTPError: HTTP Error 503: down |", rows)
+
+    def test_notice_escapes_pipes(self):
+        src = Source("s", "https://x", "plain", "attack", license_note="a | b")
+        with tempfile.TemporaryDirectory() as tmp:
+            write_outputs(Path(tmp), [], [SourceResult(src, [], 0, "x|y")], WHEN)
+            notice = (Path(tmp) / "NOTICE.md").read_text()
+        self.assertIn("| s | https://x | attack | a \\| b | 0 | x\\|y |", notice)
 
 
 if __name__ == "__main__":

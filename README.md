@@ -175,6 +175,7 @@ The [`lists`](https://github.com/Psycomy/MikrotikBlockList/tree/lists) branch co
 | `blocklist.rsc` | RouterOS import file used by the router |
 | `blocklist.txt` | Plain list, one IPv4 address or CIDR per line — **handy for other firewalls** (pfSense, OPNsense, iptables/ipset, nftables…) |
 | `stats.json` | Generation time, total, and per-source entries and errors |
+| [`NOTICE.md`](https://github.com/Psycomy/MikrotikBlockList/blob/lists/NOTICE.md) | Attribution: every source used in that build, its URL, terms and entry count |
 | `badge-entries.json`, `badge-updated.json` | shields.io endpoints for the badges above |
 
 <details>
@@ -243,8 +244,10 @@ python -m mbl build --sources sources.toml --allowlist allowlist.txt --out dist
 
 ## License
 
-[GPL-3.0](LICENSE). The blocklist data belongs to its sources and is subject to their terms
-(see [Sources and licenses](#sources-and-licenses)).
+[GPL-3.0](LICENSE) covers **the code only** (generator, workflow and RouterOS scripts).
+The blocklist data is compiled from third-party sources and remains under each source's own
+terms, not under the GPL-3.0. Per-build attribution: [`NOTICE.md`](https://github.com/Psycomy/MikrotikBlockList/blob/lists/NOTICE.md) on the `lists` branch
+(see also [Sources and licenses](#sources-and-licenses)).
 
 ---
 
@@ -299,4 +302,8 @@ integrado (`builtin-trust-store`). Se puede volver a ejecutar sin duplicar nada.
 Borra solo lo que creó el instalador y conserva tus entradas de `mbl-allow`. No revierte el
 componente `fetch` de `builtin-trust-store`.
 
-Registro de pruebas: [docs/testing-chr.md](docs/testing-chr.md). Licencia: [GPL-3.0](LICENSE).
+Registro de pruebas: [docs/testing-chr.md](docs/testing-chr.md).
+
+**Licencia:** [GPL-3.0](LICENSE) cubre **solo el código** (generador, workflow y scripts de
+RouterOS). Los datos de la lista proceden de fuentes de terceros y siguen bajo los términos de
+cada fuente, no bajo la GPL-3.0. Atribución de cada build: [`NOTICE.md`](https://github.com/Psycomy/MikrotikBlockList/blob/lists/NOTICE.md) en la rama `lists`.

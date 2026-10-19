@@ -7,6 +7,8 @@ from pathlib import Path
 from mbl.fetch import SourceResult
 
 TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+PROJECT_URL = "https://github.com/Psycomy/MikrotikBlockList"
+NOTICE_URL = PROJECT_URL + "/blob/lists/NOTICE.md"
 
 
 def _cidr(net: IPv4Network) -> str:
@@ -18,11 +20,41 @@ def _rsc(addresses: list[str], stamp: str) -> str:
         "# MikrotikBlockList v2 - https://github.com/Psycomy/MikrotikBlockList",
         "# For home / non-commercial use only (see source licenses in README)",
         f"# generated: {stamp} entries: {len(addresses)}",
+        f"# Sources and terms: {NOTICE_URL}",
         ":global mblTarget",
         "/ip firewall address-list",
     ]
     lines += [f"add list=$mblTarget timeout=7d address={a}" for a in addresses]
     lines += [":global mblImportOk true", "# MBL-END"]
+    return "\n".join(lines) + "\n"
+
+
+def _cell(value: str) -> str:
+    return value.replace("|", "\\|").replace("\n", " ")
+
+
+def _notice(results: list[SourceResult], stamp: str) -> str:
+    lines = [
+        "# MikrotikBlockList - data notice",
+        "",
+        f"Project: {PROJECT_URL}",
+        "",
+        "**For home / non-commercial use only.**",
+        "",
+        "The blocklist files on this branch are compiled from the third-party sources",
+        "listed below. The data remains under each source's own license or terms of use;",
+        "it is not covered by the GPL-3.0 license of this repository, which applies to",
+        "the code only. Check each source's terms before any other use.",
+        "",
+        f"Build: {stamp}",
+        "",
+        "| source | url | category | license / terms | entries | error |",
+        "|---|---|---|---|---|---|",
+    ]
+    for r in results:
+        s = r.source
+        cells = [s.name, s.url, s.category, s.license_note, str(len(r.networks)), r.error or ""]
+        lines.append("| " + " | ".join(_cell(c) for c in cells) + " |")
     return "\n".join(lines) + "\n"
 
 
@@ -75,6 +107,7 @@ def write_outputs(
         "stats.json": _json(stats),
         "badge-entries.json": _json(badge_entries),
         "badge-updated.json": _json(badge_updated),
+        "NOTICE.md": _notice(results, stamp),
     }
     for name, content in files.items():
         (out_dir / name).write_text(content, encoding="utf-8", newline="\n")

@@ -20,7 +20,7 @@ category = "attack"
 required = true
 """
 FILES = {"blocklist.rsc", "blocklist.txt", "stats.json",
-         "badge-entries.json", "badge-updated.json"}
+         "badge-entries.json", "badge-updated.json", "NOTICE.md"}
 
 
 def _nets(count):
