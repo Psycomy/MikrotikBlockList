@@ -24,6 +24,20 @@ class SafetyErrorsTest(unittest.TestCase):
     def test_first_run_no_previous(self):
         self.assertEqual(safety_errors(60000, None, []), [])
 
+    def test_exact_min_and_max_pass(self):
+        self.assertEqual(safety_errors(5000, None, []), [])
+        self.assertEqual(safety_errors(150000, None, []), [])
+
+    def test_exact_50_percent_drop_passes(self):
+        self.assertEqual(safety_errors(30000, 60000, []), [])
+
+    def test_previous_total_zero_skips_drop_check(self):
+        self.assertEqual(safety_errors(60000, 0, []), [])
+
+    def test_multiple_problems_multiple_errors(self):
+        errors = safety_errors(1000, 60000, ["spamhaus-drop"])
+        self.assertEqual(len(errors), 3)
+
 
 if __name__ == "__main__":
     unittest.main()
