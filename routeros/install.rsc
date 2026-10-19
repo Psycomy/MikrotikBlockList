@@ -183,8 +183,8 @@
 
     # ---- header: refuse anything that is not a MikrotikBlockList file
     # (e.g. an HTML error page) before importing it. /file read goes through
-    # :parse; if a release lacks it the check is skipped (import still needs
-    # the mblImportOk footer).
+    # :parse; if a release lacks it the check is skipped with a warning (import
+    # still needs the mblImportOk footer).
     :local gen "unknown"
     :local hdr ""
     :do {
@@ -200,6 +200,8 @@
       }
       :local gp [:find $hdr "generated: "]
       :if ([:typeof $gp] = "num") do={ :set gen [:pick $hdr ($gp + 11) ($gp + 31)] }
+    } else={
+      :log warning "MBL: header check skipped (/file read unavailable or failed on $fname)"
     }
 
     # ---- import into the list the rules are NOT using

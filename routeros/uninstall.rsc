@@ -6,7 +6,9 @@
 #
 # Removes only what install.rsc created (names mbl-* / comments MBL:*).
 # Entries you added yourself to mbl-allow are kept.
-# The built-in CA store setting is left as is.
+# The built-in CA store setting is left as is: the "fetch" component that
+# install.rsc may have added to /certificate settings builtin-trust-store is
+# NOT removed. Set it back by hand to your previous value if you want.
 {
 /system scheduler remove [find where name~"^mbl-"]
 /system script remove [find where name~"^mbl-"]
