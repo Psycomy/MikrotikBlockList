@@ -55,6 +55,25 @@ class SourcesTest(unittest.TestCase):
             nets = load_allowlist(path)
         self.assertEqual(nets, [IPv4Network("1.1.1.1/32"), IPv4Network("8.8.8.0/24")])
 
+    def test_allowlist_inline_comments(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "allow.txt"
+            path.write_text("1.1.1.1 # dns\n8.8.8.0/24\t#google\n", encoding="utf-8")
+            nets = load_allowlist(path)
+        self.assertEqual(nets, [IPv4Network("1.1.1.1/32"), IPv4Network("8.8.8.0/24")])
+
+    def test_allowlist_invalid_entry_names_line(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "allow.txt"
+            path.write_text("# x\n1.1.1.1\nnot-an-ip\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, r"line 3"):
+                load_allowlist(path)
+
+    def test_repo_allowlist_is_valid(self):
+        nets = load_allowlist(Path("allowlist.txt"))
+        self.assertIn(IPv4Network("185.199.108.0/22"), nets)
+        self.assertIn(IPv4Network("1.1.1.1/32"), nets)
+
 
 if __name__ == "__main__":
     unittest.main()

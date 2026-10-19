@@ -1,2 +1,19 @@
 # Networks that must never be blocked (one IPv4 address or CIDR per line).
-# Lines starting with # and blank lines are ignored.
+# Lines starting with # and blank lines are ignored; text after # is a comment.
+
+# GitHub (Fastly) range serving raw.githubusercontent.com: the router downloads
+# the blocklist from here, so blocking it would stop all future updates.
+185.199.108.0/22
+
+# Cloudflare public DNS resolver (primary): common upstream DNS, must stay reachable.
+1.1.1.1
+# Cloudflare public DNS resolver (secondary): common upstream DNS, must stay reachable.
+1.0.0.1
+# Google public DNS resolver (primary): common upstream DNS, must stay reachable.
+8.8.8.8
+# Google public DNS resolver (secondary): common upstream DNS, must stay reachable.
+8.8.4.4
+# Quad9 public DNS resolver (primary): common upstream DNS, must stay reachable.
+9.9.9.9
+# Quad9 public DNS resolver (secondary): common upstream DNS, must stay reachable.
+149.112.112.112
