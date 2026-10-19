@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-labelledby="title desc">
+  <title id="title">MikrotikBlockList</title>
+  <desc id="desc">A shield protecting a router, with the project name and the tagline: daily threat blocklist for RouterOS v7.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1220"/>
+      <stop offset="1" stop-color="#14213d"/>
+    </linearGradient>
+    <linearGradient id="shield" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ef4444"/>
+      <stop offset="1" stop-color="#991b1b"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f87171"/>
+      <stop offset="1" stop-color="#fbbf24"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#ffffff" stroke-opacity="0.04" stroke-width="1"/>
+    </pattern>
+    <clipPath id="card">
+      <rect x="0" y="0" width="1200" height="300" rx="24"/>
+    </clipPath>
+  </defs>
+
+  <!-- solid dark card: readable on GitHub light and dark themes -->
+  <rect x="0" y="0" width="1200" height="300" rx="24" fill="url(#bg)"/>
+  <g clip-path="url(#card)">
+    <rect x="0" y="0" width="1200" height="300" fill="url(#grid)"/>
+
+    <!-- network motif on the right: nodes, some of them blocked -->
+    <g stroke="#38bdf8" stroke-opacity="0.35" stroke-width="2" fill="none">
+      <path d="M900 70 L1010 120 L1120 60"/>
+      <path d="M1010 120 L1060 210 L1150 180"/>
+      <path d="M1010 120 L940 220"/>
+      <path d="M1060 210 L1100 280"/>
+    </g>
+    <g fill="#38bdf8" fill-opacity="0.8">
+      <circle cx="900" cy="70" r="6"/>
+      <circle cx="1010" cy="120" r="8"/>
+      <circle cx="1060" cy="210" r="6"/>
+      <circle cx="940" cy="220" r="5"/>
+    </g>
+    <g stroke="#f87171" stroke-width="3" stroke-linecap="round">
+      <circle cx="1120" cy="60" r="9" fill="#0b1220"/>
+      <path d="M1114 54 L1126 66 M1126 54 L1114 66"/>
+      <circle cx="1150" cy="180" r="9" fill="#0b1220"/>
+      <path d="M1144 174 L1156 186 M1156 174 L1144 186"/>
+      <circle cx="1100" cy="280" r="9" fill="#0b1220"/>
+      <path d="M1094 274 L1106 286 M1106 274 L1094 286"/>
+    </g>
+  </g>
+
+  <!-- shield with a router inside -->
+  <g transform="translate(70 40)">
+    <path d="M110 0 L210 36 V112 C210 172 168 206 110 222 C52 206 10 172 10 112 V36 Z"
+          fill="url(#shield)" stroke="#fecaca" stroke-opacity="0.5" stroke-width="3"/>
+    <path d="M110 16 L196 47 V112 C196 162 162 191 110 206 C58 191 24 162 24 112 V47 Z"
+          fill="none" stroke="#ffffff" stroke-opacity="0.18" stroke-width="2"/>
+    <!-- antennas -->
+    <g stroke="#f8fafc" stroke-width="5" stroke-linecap="round">
+      <path d="M78 104 L66 68"/>
+      <path d="M142 104 L154 68"/>
+    </g>
+    <circle cx="66" cy="66" r="5" fill="#f8fafc"/>
+    <circle cx="154" cy="66" r="5" fill="#f8fafc"/>
+    <!-- router body -->
+    <rect x="52" y="104" width="116" height="42" rx="9" fill="#f8fafc"/>
+    <g fill="#22c55e">
+      <circle cx="70" cy="125" r="4.5"/>
+      <circle cx="86" cy="125" r="4.5"/>
+    </g>
+    <circle cx="102" cy="125" r="4.5" fill="#fbbf24"/>
+    <g fill="#334155">
+      <rect x="120" y="119" width="10" height="12" rx="2"/>
+      <rect x="135" y="119" width="10" height="12" rx="2"/>
+      <rect x="150" y="119" width="10" height="12" rx="2"/>
+    </g>
+    <!-- check mark: protected -->
+    <path d="M86 172 L104 188 L136 160" fill="none" stroke="#f8fafc" stroke-width="7"
+          stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- text -->
+  <g font-family="'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif">
+    <text x="330" y="138" font-size="66" font-weight="700" fill="#f8fafc" letter-spacing="-1">Mikrotik<tspan fill="#f87171">BlockList</tspan></text>
+    <rect x="332" y="160" width="220" height="5" rx="2.5" fill="url(#accent)"/>
+    <text x="330" y="208" font-size="27" fill="#cbd5e1">Daily threat blocklist for RouterOS v7 firewalls</text>
+    <text x="330" y="246" font-size="19" fill="#64748b" letter-spacing="1">PUBLIC THREAT FEEDS  ·  RAW FIREWALL  ·  ONE-LINE INSTALL</text>
+  </g>
+</svg>
