@@ -108,10 +108,15 @@ def latest_stable() -> str:
 
 
 class TlsServer:
-    """Serves `root` over HTTPS with a certificate for 10.0.2.2 and 127.0.0.1."""
+    """Serves `root` over HTTPS with a certificate for 10.0.2.2 and 127.0.0.1.
 
-    def __init__(self, root: Path):
+    `extra_ips` adds more IP SANs (e.g. this host's LAN address, so that an
+    existing CHR on the LAN can verify the certificate).
+    """
+
+    def __init__(self, root: Path, extra_ips: tuple[str, ...] = ()):
         self.root = Path(root)
+        self.extra_ips = tuple(extra_ips)
         self.fail_paths: set[str] = set()
         self.port = free_port()
         self._tmp = tempfile.TemporaryDirectory(prefix="mbl-tls-")
@@ -140,11 +145,12 @@ class TlsServer:
             "req", "-newkey", "rsa:2048", "-nodes", "-keyout", "server.key",
             "-out", "server.csr", "-subj", "/CN=10.0.2.2",
         )
+        sans = ",".join(f"IP:{ip}" for ip in ("10.0.2.2", "127.0.0.1", *self.extra_ips))
         (self._dir / "server.ext").write_text(
             "basicConstraints=CA:FALSE\n"
             "keyUsage=critical,digitalSignature,keyEncipherment\n"
             "extendedKeyUsage=serverAuth\n"
-            "subjectAltName=IP:10.0.2.2,IP:127.0.0.1\n"
+            f"subjectAltName={sans}\n"
         )
         self._openssl(
             "x509", "-req", "-in", "server.csr", "-CA", "ca.crt", "-CAkey", "ca.key",

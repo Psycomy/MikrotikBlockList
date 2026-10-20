@@ -4,6 +4,8 @@ import os
 import shutil
 import socket
 import ssl
+import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -113,6 +115,20 @@ class BootTimeoutTest(unittest.TestCase):
         self.assertIsInstance(chr_, Chr)
         chr_.stop()
         chr_.stop()
+
+
+class E2eSkipTest(unittest.TestCase):
+    def test_e2e_skipped_without_flag(self):
+        """The real CHR cases never run in a normal discover (no MBL_E2E=1)."""
+        env = {k: v for k, v in os.environ.items() if k != "MBL_E2E"}
+        root = Path(__file__).resolve().parents[2]
+        r = subprocess.run(
+            [sys.executable, "-m", "unittest", "tests.e2e.test_routeros"],
+            cwd=root, env=env, capture_output=True, text=True, timeout=60,
+        )
+        out = r.stdout + r.stderr
+        self.assertEqual(r.returncode, 0, out)
+        self.assertIn("skipped", out)
 
 
 if __name__ == "__main__":
