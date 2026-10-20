@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from ipaddress import IPv4Network
 from pathlib import Path
 
-FORMATS = frozenset({"plain", "dshield", "threatfox_csv", "c2intel_csv"})
+FORMATS = frozenset({"plain", "dshield", "threatfox_csv", "c2intel_csv", "csv"})
 CATEGORIES = frozenset({"attack", "c2"})
 
 

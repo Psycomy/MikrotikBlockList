@@ -41,7 +41,8 @@ flowchart LR
 
 1. Every day a GitHub Action downloads the [sources](#sources-and-licenses), drops private,
    reserved, CGNAT and other non-global ranges (and anything broader than a /8), subtracts the networks in the
-   repository [`allowlist.txt`](allowlist.txt) and merges overlapping networks.
+   repository [`allowlist.txt`](allowlist.txt) (GitHub's download range, the big public DNS
+   resolvers and Cloudflare's shared CDN ranges) and merges overlapping networks.
 2. Safety checks refuse to publish a broken list: between 5,000 and 150,000 entries, no drop of
    more than 50% and no growth of more than 2x from the previous list, and the required source
    (Spamhaus DROP) must succeed. For an expected jump (e.g. a new source), a maintainer can run
@@ -59,7 +60,7 @@ flowchart LR
 - Interface lists named **`WAN`** (your Internet interface) and **`LAN`** (your local interfaces).
   The default home configuration already has them; the installer stops without changing anything
   if they are missing.
-- **RAM:** today's list (~32k entries) takes about **6–10 MiB**, and during an update the old and
+- **RAM:** today's list (~39k entries) takes about **7–12 MiB**, and during an update the old and
   the new lists coexist for a few seconds, so plan for twice that. On 256 MiB devices that is fine;
   tight devices should keep an eye on `/system resource print`.
 
@@ -164,23 +165,26 @@ Defined in [`sources.toml`](sources.toml). **C2** = botnet command-and-control s
 | Source | Category | License / terms (as stated by the source) |
 |---|---|---|
 | [Spamhaus DROP](https://www.spamhaus.org/drop/) *(required)* | attack | Free under the Spamhaus DROP terms; **no explicit redistribution grant** — home use |
-| [abuse.ch Feodo Tracker](https://feodotracker.abuse.ch/) | c2 | CC0, commercial and non-commercial use allowed |
 | [Emerging Threats compromised IPs](https://rules.emergingthreats.net/blockrules/) | attack | Emerging Threats open rules, BSD-style terms |
-| [Emerging Threats block IPs](https://rules.emergingthreats.net/fwrules/) | attack | Emerging Threats open rules, BSD-style terms (file header) |
 | [CINS Army](https://cinsscore.com/) | attack | Usable "in any way you see fit"; no formal license |
 | [blocklist.de](https://www.blocklist.de/) | attack | **Unknown** — check the source terms |
-| [BruteForceBlocker](https://danger.rulez.sk/projects/bruteforceblocker/) | attack | **Unknown** — check the source terms |
 | [DShield](https://www.dshield.org/) | attack | CC BY-NC-SA (non-commercial only, attribution) |
-| [StopForumSpam toxic CIDRs](https://www.stopforumspam.com/) | attack | Non-commercial use only |
 | [IPsum level 3](https://github.com/stamparm/ipsum) | attack | The Unlicense (public domain) |
 | [Binary Defense banlist](https://www.binarydefense.com/) | attack | Public use only, no commercial use (file header) |
+| [Turris Sentinel greylist](https://view.sentinel.turris.cz/greylist-data/) (CZ.NIC, honeypots on Turris routers) | attack | CC BY-NC-SA 4.0 (non-commercial only, attribution) |
 | [abuse.ch ThreatFox](https://threatfox.abuse.ch/) | c2 | abuse.ch fair use, free; commercial use may need the paid API |
-| [C2IntelFeeds](https://github.com/drb-ra/C2IntelFeeds) | c2 | CC BY-NC-SA 4.0 (non-commercial only, attribution) |
+| [ThreatCluster](https://threatcluster.io/iocs) | c2 | **No license stated** — check the source terms |
 | [Data-Shield IPv4](https://github.com/duggytuxy/Data-Shield_IPv4_Blocklist) *(optional, disabled)* | attack | Repository GPLv3 |
 | [AbuseIPDB s100 (borestad)](https://github.com/borestad/blocklist-abuseipdb) *(optional, disabled)* | attack | No license stated; AbuseIPDB data used with permission |
 
-**Removed:** GreenSnow — its site states that reproduction or republication is strictly
-prohibited, and this project republishes the data.
+The selection comes from a comparison of 44 free feeds (size, overlap, unique contribution,
+false positives against CDN ranges and the top 5,000 sites, freshness and license): see
+[`docs/source-study-2026-10-20.md`](docs/source-study-2026-10-20.md).
+
+**Removed:** GreenSnow (forbids republication); Feodo Tracker (not updated since March 2026);
+C2IntelFeeds (fully contained in ThreatFox); BruteForceBlocker (≈ Emerging Threats compromised);
+Emerging Threats block IPs (= Spamhaus DROP + DShield); StopForumSpam (forum-spam ranges).
+Dataplane.org was not added because it forbids redistribution.
 
 The license notes above are a best-effort summary, not legal advice. All credit for the data
 goes to the projects listed.
@@ -238,7 +242,7 @@ a false positive in a feed, report it to that feed.
 
 **How do I force an update now?** `/system script run mbl-update`, then check `/log print where message~"MBL"`.
 
-**My device has little RAM.** Each list of ~32k entries uses about 6–10 MiB and an update briefly
+**My device has little RAM.** Each list of ~39k entries uses about 7–12 MiB and an update briefly
 needs two. Check free memory with `/system resource print` before installing.
 
 **Why the raw table and not the filter table?** Raw rules run before connection tracking, so
@@ -283,8 +287,13 @@ partir de fuentes públicas, y la bloquea en el firewall *raw* de tu router Mikr
 > Algunas son CC BY-NC-SA o "solo no comercial", y otras no tienen una licencia de
 > redistribución explícita (ver la [tabla de fuentes](#sources-and-licenses)).
 
+**Fuentes:** 10 listas elegidas tras comparar 44 fuentes gratuitas por tamaño, solapamiento,
+aportación única, falsos positivos (CDN y los 5.000 sitios más visitados), frescura y licencia:
+ver [`docs/source-study-2026-10-20.md`](docs/source-study-2026-10-20.md). La allowlist del
+repositorio excluye siempre el rango de descarga de GitHub, los DNS públicos y los rangos de Cloudflare.
+
 **Requisitos:** RouterOS **7.21 o superior** (probado en CHR 7.24.5), listas de interfaces **`WAN`**
-y **`LAN`**, y algo de RAM libre: unos 6–10 MiB por lista (~32k entradas), el doble durante unos
+y **`LAN`**, y algo de RAM libre: unos 7–12 MiB por lista (~39k entradas), el doble durante unos
 segundos en cada actualización.
 
 ### Instalación

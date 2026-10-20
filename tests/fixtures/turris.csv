@@ -1,0 +1,8 @@
+# For the terms of use see https://view.sentinel.turris.cz/greylist-data/LICENSE.txt
+Address,Tags
+119.30.119.121,telnet
+5.107.147.26,telnet
+119.116.37.28,telnet
+137.59.218.142,telnet
+34.74.242.206,http
+89.37.172.132,"ftp,http,smtp,telnet"
