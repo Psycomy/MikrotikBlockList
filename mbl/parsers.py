@@ -69,11 +69,11 @@ def _parse_threatfox_csv(text: str) -> ParseResult:
     return result
 
 
-def _parse_c2intel_csv(text: str) -> ParseResult:
+def _parse_csv_first_column(text: str) -> ParseResult:
     result = ParseResult()
     for row in _csv_rows(text):
         value = row[0].strip()
-        if value.lower() == "ip":
+        if value.lower() in ("ip", "address"):
             continue  # header
         _add(result, value)
     return result
@@ -83,7 +83,8 @@ _PARSERS = {
     "plain": _parse_plain,
     "dshield": _parse_dshield,
     "threatfox_csv": _parse_threatfox_csv,
-    "c2intel_csv": _parse_c2intel_csv,
+    "c2intel_csv": _parse_csv_first_column,
+    "csv": _parse_csv_first_column,
 }
 
 

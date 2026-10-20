@@ -76,6 +76,12 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(result.networks, _nets("1.2.3.4/32"))
         self.assertEqual(result.invalid, 0)
 
+    def test_csv_first_column_turris(self):
+        result = parse("csv", _fixture("turris.csv"))
+        self.assertEqual(len(result.networks), 6)
+        self.assertIn(IPv4Network("89.37.172.132/32"), result.networks)
+        self.assertEqual(result.invalid, 0)
+
     def test_html_page_yields_nothing(self):
         result = parse("plain", "<html><body>Just a moment...</body></html>")
         self.assertEqual(result.networks, [])

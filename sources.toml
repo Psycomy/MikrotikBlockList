@@ -1,8 +1,18 @@
-# Source catalog. Formats: plain, dshield, threatfox_csv, c2intel_csv. Categories: attack, c2.
+# Source catalog. Formats: plain, dshield, threatfox_csv, c2intel_csv, csv (first column). Categories: attack, c2.
 # Home / non-commercial use only: non-commercial licenses are accepted.
 #
 # Removed: greensnow (https://blocklist.greensnow.co/greensnow.txt) - its site states
 # "Reproduction or republication strictly prohibited"; this project republishes the data.
+#
+# Removed after the 2026-10-20 source study (docs/source-study-2026-10-20.md):
+#   feodo (abuse.ch Feodo Tracker) - not updated since 2026-03-04
+#   c2intel (drb-ra C2IntelFeeds 30-day) - 100% contained in threatfox
+#   bruteforceblocker - ~98% identical to et-compromised, adds nothing
+#   et-block - Spamhaus DROP + DShield, both already in the catalog
+#   stopforumspam (toxic CIDRs) - forum-spam ranges, no value for a router
+# Rejected: dataplane.org (forbids redistribution), aggregators (Data-Shield,
+#   ThreatHive, FireHOL), and feeds that hit popular sites (blocklist.net.ua,
+#   TweetFeed, romainmarcoux, FireHOL level3).
 
 [[source]]
 name = "spamhaus-drop"
@@ -13,25 +23,11 @@ required = true
 license_note = "Free under Spamhaus DROP terms; no explicit redistribution grant - home use"
 
 [[source]]
-name = "feodo"
-url = "https://feodotracker.abuse.ch/downloads/ipblocklist_recommended.txt"
-format = "plain"
-category = "c2"
-license_note = "abuse.ch CC0, commercial and non-commercial use allowed"
-
-[[source]]
 name = "et-compromised"
 url = "https://rules.emergingthreats.net/blockrules/compromised-ips.txt"
 format = "plain"
 category = "attack"
 license_note = "Emerging Threats open rules, BSD-style terms"
-
-[[source]]
-name = "et-block"
-url = "https://rules.emergingthreats.net/fwrules/emerging-Block-IPs.txt"
-format = "plain"
-category = "attack"
-license_note = "Emerging Threats open rules, BSD-style terms (file header)"
 
 [[source]]
 name = "cins"
@@ -48,25 +44,11 @@ category = "attack"
 license_note = "unknown - check source terms"
 
 [[source]]
-name = "bruteforceblocker"
-url = "https://danger.rulez.sk/projects/bruteforceblocker/blist.php"
-format = "plain"
-category = "attack"
-license_note = "unknown - check source terms"
-
-[[source]]
 name = "dshield"
 url = "https://www.dshield.org/block.txt"
 format = "dshield"
 category = "attack"
 license_note = "CC BY-NC-SA (non-commercial only, attribution)"
-
-[[source]]
-name = "stopforumspam"
-url = "https://www.stopforumspam.com/downloads/toxic_ip_cidr.txt"
-format = "plain"
-category = "attack"
-license_note = "Non-commercial use only"
 
 [[source]]
 name = "ipsum-3"
@@ -83,6 +65,13 @@ category = "attack"
 license_note = "Public use only, no commercial use (file header)"
 
 [[source]]
+name = "turris-greylist"
+url = "https://view.sentinel.turris.cz/greylist-data/greylist-latest.csv"
+format = "csv"
+category = "attack"
+license_note = "CZ.NIC Turris Sentinel greylist, CC BY-NC-SA 4.0 (non-commercial only, attribution)"
+
+[[source]]
 name = "threatfox"
 url = "https://threatfox.abuse.ch/export/csv/ip-port/recent/"
 format = "threatfox_csv"
@@ -90,11 +79,11 @@ category = "c2"
 license_note = "abuse.ch fair use, free; commercial use may need paid API"
 
 [[source]]
-name = "c2intel"
-url = "https://raw.githubusercontent.com/drb-ra/C2IntelFeeds/master/feeds/IPC2s-30day.csv"
-format = "c2intel_csv"
+name = "threatcluster"
+url = "https://threatcluster.io/api/iocs/public/ips.txt"
+format = "plain"
 category = "c2"
-license_note = "CC BY-NC-SA 4.0 (non-commercial only, attribution)"
+license_note = "ThreatCluster public IOC feed; no license stated - check source terms"
 
 [[source]]
 name = "datashield"
