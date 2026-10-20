@@ -258,6 +258,7 @@ dropped packets cost almost nothing and never create conntrack entries.
 2. Edit [`sources.toml`](sources.toml) and [`allowlist.txt`](allowlist.txt) as you like.
 3. In [`routeros/install.rsc`](routeros/install.rsc) change the `mblUrl` line at the top to your
    fork's `.../lists/blocklist.rsc`, and use your fork's URL in the install one-liner.
+   To test against another server, set `:global mblUrlBase "https://host:port"` before the `/import`.
 
 Build locally (Python 3.12, no dependencies):
 
@@ -344,6 +345,8 @@ actualización.
 Para los mantenedores: el workflow rechaza publicar si el total crece más del doble. Ante un salto
 esperado (p. ej. una fuente nueva), ejecútalo a mano (*Actions → build → Run workflow* en `main`)
 marcando **allow_growth**, que solo omite esa comprobación (en local: `python -m mbl build --allow-growth`).
+
+Para probar contra otro servidor, define `:global mblUrlBase "https://host:port"` antes del `/import` del instalador.
 
 ### Desinstalación
 
