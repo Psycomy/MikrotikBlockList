@@ -225,15 +225,38 @@ Los casos comparten un router y corren en orden.
 
 | Caso | Cubre |
 |---|---|
-| `test_01_clean_install` | Instalación limpia: reglas `MBL:`, schedulers `mbl-daily` y `mbl-boot`, ≥1000 entradas |
+| `test_01_clean_install` | Instalación limpia: reglas `MBL:`, schedulers `mbl-daily` y `mbl-boot`, exactamente `LIST_SIZE` (10000) entradas y 0 inválidas (líneas cortadas entre trozos de `/file read`) |
 | `test_02_update_alternates` | `mbl-update` alterna entre `mbl-a` y `mbl-b` |
 | `test_03_truncated_keeps_active` | Una lista truncada se rechaza y la activa se conserva |
 | `test_04_dead_url_keeps_active` | Con la URL caída se conserva la lista activa |
 | `test_05_reboot_reloads` | Tras reiniciar, el modo boot recarga la lista |
-| `test_06_flash_path` | Equipos con `flash/`: copia de seguridad `mbl-last.rsc` |
+| `test_06_flash_path` | Equipos con `flash/`: copia de seguridad `flash/mbl-last.txt` |
 | `test_07_reinstall_no_duplicates` | Reinstalar no duplica reglas ni schedulers |
 | `test_08_uninstall_clean` | `uninstall.rsc` deja el router limpio |
-| `test_09_default_url_without_override` | Sin `mblUrlBase`, el instalador usa la URL de `lists` |
+| `test_09_default_url_without_override` | Sin `mblUrlBase`, el instalador usa la URL de `lists/routeros-full.txt` |
+| `test_10_upgrade_from_v2` | Instala el `install.rsc` de la etiqueta `v2.0.0` (con su `mbl-last.rsc`) y reinstala la v3 encima. Un hilo toma muestras de la lista a la que apunta `MBL: in` durante la reinstalación: siempre ≥ `MIN_ENTRIES` (como mucho una muestra aislada sin regla mientras el instalador la recrea). Tras la primera carga v3: `MBL: loaded 10000 entries`, la lista activa cambió, `MBL: removed v2 files`, ningún `mbl-*.rsc` y existe `mbl-last.txt` |
+| `test_11_injected_lines_never_run` | Un fichero con `/system ...`, `1.2.3.4; /ip ...`, `$(...)`, `[...]`, `:execute`, octetos o prefijos fuera de rango y una línea de 100 KB: nada se ejecuta (el marcador `mbl-pwned` no aparece) y las líneas cuentan como inválidas |
+| `test_12_count_mismatch_rejected` | Cabecera y pie coherentes entre sí pero con más entradas de las que hay (fichero cortado con el pie añadido a mano): rechazado con `count mismatch`, lista activa intacta |
+| `test_13_crlf_accepted` | Fichero con `\r\n` y espacios al final: las líneas se aceptan y se cargan todas |
+| `test_14_too_many_invalid_rejected` | Más de un 1 % de líneas inválidas (más de 200 con 10000 entradas): rechazado con `too many invalid lines`, lista activa intacta |
+| `test_15_final_uninstall` | Siempre el último: deja el router limpio |
+
+### Rendimiento de la v3 (2026-10-21)
+
+CHR 7.24.5, 1 vCPU, 256 MiB, KVM; lista de 40000 entradas consecutivas (/32) generada con
+`write_outputs` (463 KiB) y servida por HTTPS local.
+
+| Medida | Resultado |
+|---|---|
+| `mbl-update` completo (descarga, lectura y validación, 40000 altas, cambio de reglas, borrado de la lista vieja, copia de arranque) | **25,2 s** (dos ejecuciones: 25,187 y 25,192 s) |
+| Instalación con primera carga | 18,2 s |
+| Solo el bucle de lectura, validación y alta de 40000 entradas | ~8 s |
+| `test_02` del e2e (10000 entradas, incluye 2 s tras el fetch y 1 s por renombrado) | 13,4 s |
+| RAM libre con una lista de 40000 | 36,7 MiB antes; 36,1 MiB después |
+| RAM libre mínima durante la actualización (dos listas, ~80000 entradas) | 30,5 MiB |
+
+El objetivo era ≤ 5 min con ~39k entradas: se cumple con mucho margen y no hizo falta optimizar.
+`/file read` admite como máximo `chunk-size=32768`; más da error.
 
 ### Subir la versión fijada
 
