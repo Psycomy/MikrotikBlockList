@@ -27,6 +27,7 @@ import os
 import re
 import subprocess
 import tempfile
+import threading
 import time
 import unittest
 from contextlib import suppress
@@ -277,8 +278,17 @@ class RouterOsTest(unittest.TestCase):
         self.set_update_path("/routeros-full.txt", f"/{name}")
 
     def restore_path(self, name: str) -> None:
+        # no assertions: this runs in `finally` and must not mask the real failure
         self.set_update_path(f"/{name}", "/routeros-full.txt")
-        self.assertIn(f"{self.base}/routeros-full.txt", self.update_source())
+
+    def sample_protection(self) -> str:
+        """'<list the MBL: in rule points to> <its entries>', or 'none 0' without the rule."""
+        return self.chr.run(
+            '{:local r [/ip firewall raw find where comment="MBL: in"];'
+            ':if ([:len $r] = 0) do={:put "none 0"} else={'
+            ':local l [/ip firewall raw get ($r->0) src-address-list];'
+            ':put ($l . " " . [:len [/ip firewall address-list find where list=$l]])}}'
+        ).strip()
 
     # -- cases --------------------------------------------------------------
 
@@ -422,16 +432,50 @@ class RouterOsTest(unittest.TestCase):
         self.assertEqual(self.num("/file", 'name="mbl-last.rsc"'), 1, self.chr.run("/file print"))
         before = self.count(self.active_list())
         self.assertGreaterEqual(before, MIN_ENTRIES)
+        v2_list = self.active_list()
+        rsc = 'name~"^mbl-.*\\\\.rsc"'
+        self.assertEqual(self.num("/file", rsc), 1, self.chr.run("/file print"))  # pattern control
         token = self.mark()
-        self.install(self.base)
-        # protection never lapsed: the rule points at a populated list right after
-        # the v3 install (which already loads the first v3 list)
-        self.assertGreaterEqual(self.count(self.active_list()), MIN_ENTRIES)
-        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
+        samples: list[str] = []
+        stop = threading.Event()
+
+        def poll():
+            while not stop.is_set():
+                try:
+                    samples.append(self.sample_protection())
+                except ChrError as e:
+                    samples.append(f"error {e}")
+                stop.wait(0.5)
+
+        poller = threading.Thread(target=poll, daemon=True)
+        poller.start()
+        try:
+            self.install(self.base)
+        finally:
+            stop.set()
+            poller.join(30)
+        samples.append(self.sample_protection())
+        self.assertGreaterEqual(len(samples), 3, samples)
+        # every sample sees a populated list. The installer removes and recreates
+        # the rules, so a single sample without the rule is tolerated, no more.
+        prev_none = False
+        for smp in samples:
+            name, _, n = smp.partition(" ")
+            if name == "none":
+                self.assertFalse(prev_none, f"rule missing in 2 consecutive samples: {samples}")
+                prev_none = True
+                continue
+            prev_none = False
+            self.assertTrue(n.isdigit() and int(n) >= MIN_ENTRIES, f"{smp!r} in {samples}")
         log = self.log_after(token)
+        # the v3 load itself happened, whatever the final count says
+        self.assertIn(f"MBL: loaded {LIST_SIZE} entries", log)
         self.assertIn("MBL: removed v2 files", log)
-        self.assertEqual(self.num("/file", 'name~"^mbl-.*\\\\.rsc"'), 0, self.chr.run("/file print"))
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
+        self.assertEqual(self.num("/file", rsc), 0, self.chr.run("/file print"))
         self.assertEqual(self.num("/file", 'name="mbl-last.txt"'), 1, self.chr.run("/file print"))
+        # the v3 load went to the other list (it does not clear the v2 one first)
+        self.assertNotEqual(self.active_list(), v2_list)
         self.assertEqual(self.count(self.active_list()), LIST_SIZE)
 
     def test_11_injected_lines_never_run(self):
@@ -440,10 +484,12 @@ class RouterOsTest(unittest.TestCase):
         try:
             old = self.active_list()
             token = self.mark()
+            self.server.requests.clear()
             self.update()
             self.assertNotEqual(self.active_list(), old)
             self.assertEqual(self.count(self.active_list()), LIST_SIZE)
             self.assertEqual(self.count("mbl-pwned"), 0)
+            self.assertIn(f"/{name}", self.server.requests)
             self.assertIn("MBL: loaded", self.log_after(token))
         finally:
             self.restore_path(name)
