@@ -1,6 +1,6 @@
 import tempfile
 import unittest
-from ipaddress import IPv4Network
+from ipaddress import IPv4Network, IPv6Network
 from pathlib import Path
 
 from mbl.sources import VARIANTS, load_allowlist, load_sources
@@ -71,7 +71,7 @@ class SourcesTest(unittest.TestCase):
     def test_repo_catalog_lite_sources(self):
         sources = load_sources(Path("sources.toml"))
         lite = {s.name for s in sources if "lite" in s.variants}
-        self.assertEqual(lite, {"spamhaus-drop", "dshield", "et-compromised", "threatfox", "threatcluster"})
+        self.assertEqual(lite, {"spamhaus-drop", "spamhaus-drop-v6", "dshield", "et-compromised", "threatfox", "threatcluster"})
 
     def test_allowlist_parses(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -93,6 +93,27 @@ class SourcesTest(unittest.TestCase):
             path.write_text("# x\n1.1.1.1\nnot-an-ip\n", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, r"line 3"):
                 load_allowlist(path)
+
+    def test_allowlist_reads_ipv6(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "allow.txt"
+            path.write_text("1.1.1.1\n2606:4700::/32 # cf\n2620:fe::fe\n", encoding="utf-8")
+            nets = load_allowlist(path)
+        self.assertEqual(nets, [IPv4Network("1.1.1.1/32"), IPv6Network("2606:4700::/32"),
+                                IPv6Network("2620:fe::fe/128")])
+
+    def test_repo_catalog_has_spamhaus_v6(self):
+        s = {x.name: x for x in load_sources(Path("sources.toml"))}["spamhaus-drop-v6"]
+        self.assertEqual(s.format, "jsonl_cidr")
+        self.assertFalse(s.required)
+        self.assertEqual(s.category, "attack")
+        self.assertEqual(s.variants, ("lite", "full"))
+        self.assertEqual(s.url, "https://www.spamhaus.org/drop/drop_v6.json")
+
+    def test_repo_allowlist_has_ipv6(self):
+        nets = load_allowlist(Path("allowlist.txt"))
+        self.assertIn(IPv6Network("2606:50c0::/32"), nets)
+        self.assertIn(IPv6Network("2a06:98c0::/29"), nets)
 
     def test_repo_allowlist_is_valid(self):
         nets = load_allowlist(Path("allowlist.txt"))

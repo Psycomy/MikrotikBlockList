@@ -34,7 +34,7 @@ class InstallerVersionTest(unittest.TestCase):
         self.assertEqual(body.count("@MBL_VERSION@"), 1)
 
     def test_installer_injects_version_placeholder(self):
-        self.assertIn(':set ph "@MBL_VERSION@"', INSTALLER.read_text())
+        self.assertIn('$mblInject "@MBL_VERSION@" $mblScriptVersion', INSTALLER.read_text())
 
     def test_installer_has_variant_placeholder(self):
         body = _update_body(INSTALLER.read_text())
@@ -42,7 +42,25 @@ class InstallerVersionTest(unittest.TestCase):
         self.assertIn(':local variant "@MBL_VARIANT@"', body)
 
     def test_installer_injects_variant_placeholder(self):
-        self.assertIn(':set ph "@MBL_VARIANT@"', INSTALLER.read_text())
+        self.assertIn('$mblInject "@MBL_VARIANT@" $mblVar', INSTALLER.read_text())
+
+    def test_installer_has_url_placeholders(self):
+        body = _update_body(INSTALLER.read_text())
+        self.assertEqual(body.count("@MBL_URL@"), 1)
+        self.assertEqual(body.count("@MBL_URL6@"), 1)
+
+    def test_installer_injects_url_placeholders(self):
+        text = INSTALLER.read_text()
+        self.assertIn('$mblInject "@MBL_URL@" $mblUrl', text)
+        self.assertIn('$mblInject "@MBL_URL6@" $mblUrl6', text)
+
+    def test_installer_has_ipv6_placeholder(self):
+        body = _update_body(INSTALLER.read_text())
+        self.assertEqual(body.count("@MBL_IPV6@"), 1)
+        self.assertIn(':local ipv6 "@MBL_IPV6@"', body)
+
+    def test_installer_injects_ipv6_placeholder(self):
+        self.assertIn('$mblInject "@MBL_IPV6@" $mblV6', INSTALLER.read_text())
 
 
 if __name__ == "__main__":

@@ -1,0 +1,4 @@
+{"cidr":"2001:678:254::/48","sblid":"SBL697648","rir":"ripencc"}
+{"cidr":"2a0b:7080::/32","sblid":"SBL500000","rir":"ripencc"}
+{"cidr":"2602:fed2:1000::/36","sblid":"SBL600000","rir":"arin"}
+{"type":"metadata","timestamp":1760000000,"size":1234,"records":3}

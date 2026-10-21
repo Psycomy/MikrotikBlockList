@@ -1,15 +1,16 @@
-"""Per-format parsers turning raw source text into IPv4 networks."""
+"""Per-format parsers turning raw source text into IPv4/IPv6 networks."""
 import csv
 import re
 from dataclasses import dataclass, field
-from ipaddress import IPv4Network
+import json
+from ipaddress import IPv4Network, IPv6Network, ip_network
 
 _PLAIN_TOKEN = re.compile(r"[#;\s]")
 
 
 @dataclass
 class ParseResult:
-    networks: list[IPv4Network] = field(default_factory=list)
+    networks: list[IPv4Network | IPv6Network] = field(default_factory=list)
     invalid: int = 0
 
 
@@ -18,11 +19,9 @@ def _lines(text: str) -> list[str]:
 
 
 def _add(result: ParseResult, token: str) -> None:
-    """Append token as an IPv4 network; ignore IPv6, count anything else as invalid."""
-    if ":" in token:
-        return
+    """Append token as an IPv4 or IPv6 network; count anything else as invalid."""
     try:
-        result.networks.append(IPv4Network(token, strict=False))
+        result.networks.append(ip_network(token, strict=False))
     except ValueError:
         result.invalid += 1
 
@@ -63,9 +62,12 @@ def _parse_threatfox_csv(text: str) -> ParseResult:
             result.invalid += 1
             continue
         value = row[2].strip()
-        if value.startswith("[") or value.count(":") > 1:
-            continue  # IPv6
-        _add(result, value.split(":", 1)[0])
+        if value.startswith("["):  # "[addr]:port"
+            _add(result, value[1:].split("]", 1)[0])
+        elif value.count(":") > 1:  # bare IPv6 address
+            _add(result, value)
+        else:
+            _add(result, value.split(":", 1)[0])
     return result
 
 
@@ -79,12 +81,35 @@ def _parse_csv_first_column(text: str) -> ParseResult:
     return result
 
 
+def _parse_jsonl_cidr(text: str) -> ParseResult:
+    """One JSON object per line; lines without a "cidr" key (metadata) are ignored."""
+    result = ParseResult()
+    for line in _lines(text):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            result.invalid += 1
+            continue
+        if not isinstance(obj, dict) or "cidr" not in obj:
+            continue
+        cidr = obj["cidr"]
+        if not isinstance(cidr, str):
+            result.invalid += 1
+            continue
+        _add(result, cidr.strip())
+    return result
+
+
 _PARSERS = {
     "plain": _parse_plain,
     "dshield": _parse_dshield,
     "threatfox_csv": _parse_threatfox_csv,
     "c2intel_csv": _parse_csv_first_column,
     "csv": _parse_csv_first_column,
+    "jsonl_cidr": _parse_jsonl_cidr,
 }
 
 

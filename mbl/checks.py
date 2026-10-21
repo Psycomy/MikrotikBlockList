@@ -3,6 +3,7 @@
 MIN_TOTAL = 5000
 MAX_TOTAL = 150000
 LIMITS = {"full": (MIN_TOTAL, MAX_TOTAL), "lite": (1000, 20000)}
+LIMITS6 = {"full": (50, 20000), "lite": (20, 5000)}
 MAX_DROP = 0.5
 MAX_GROWTH = 2.0
 

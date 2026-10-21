@@ -3,11 +3,11 @@ import re
 import tempfile
 import unittest
 from datetime import datetime, timezone
-from ipaddress import IPv4Network
+from ipaddress import IPv4Network, IPv6Network
 from pathlib import Path
 
 from mbl.fetch import SourceResult
-from mbl.render import router_txt, write_outputs
+from mbl.render import ipv6_files, router_txt, write_outputs
 from mbl.sources import Source
 
 ADD_RE = re.compile(r"^add list=\$mblTarget timeout=7d address=\d+\.\d+\.\d+\.\d+(/\d+)?$")
@@ -66,6 +66,68 @@ class RenderTest(unittest.TestCase):
             stats = json.loads((Path(tmp) / "stats.json").read_text())
         self.assertEqual(stats["total"], 2)
         self.assertEqual(stats["variants"], {"full": {"total": 2}, "lite": {"total": 1}})
+
+    def test_writes_ipv6_files(self):
+        full = [IPv4Network("8.8.8.8/32")]
+        full6 = [IPv6Network("2a00:1::/32"), IPv6Network("2a00:2::1/128")]
+        lite6 = [IPv6Network("2a00:2::1/128")]
+        with tempfile.TemporaryDirectory() as tmp:
+            write_outputs(Path(tmp), {"full": full}, _results(full), WHEN, "3.3.0",
+                          variants6={"full": full6, "lite": lite6})
+            out = Path(tmp)
+            r6 = (out / "routeros6-full.txt").read_text()
+            r6l = (out / "routeros6-lite.txt").read_text().splitlines()
+            b6 = (out / "blocklist6.txt").read_text()
+            b6l = (out / "blocklist6-lite.txt").read_text()
+            stats = json.loads((out / "stats.json").read_text())
+        self.assertEqual(r6, router_txt(["2a00:1::/32", "2a00:2::1"], "2026-10-19T04:17:00Z",
+                                        "3.3.0", variant="full", family="ipv6"))
+        self.assertIn("family=ipv6", r6.splitlines()[0])
+        self.assertIn("variant=lite", r6l[0])
+        self.assertEqual(b6, "2a00:1::/32\n2a00:2::1\n")
+        self.assertEqual(b6l, "2a00:2::1\n")
+        self.assertEqual(stats["ipv6"], {"published": True, "variants": {
+            "full": {"total": 2}, "lite": {"total": 1}}})
+
+    def test_no_ipv6_files_without_variants6(self):
+        full = [IPv4Network("8.8.8.8/32")]
+        with tempfile.TemporaryDirectory() as tmp:
+            write_outputs(Path(tmp), {"full": full}, _results(full), WHEN)
+            names = {p.name for p in Path(tmp).iterdir()}
+            stats = json.loads((Path(tmp) / "stats.json").read_text())
+        self.assertFalse([n for n in names if "6" in n])
+        self.assertEqual(stats["ipv6"], {"published": False, "variants": {}})
+
+    def test_withheld_ipv6_keeps_baseline_totals(self):
+        full = [IPv4Network("8.8.8.8/32")]
+        with tempfile.TemporaryDirectory() as tmp:
+            write_outputs(Path(tmp), {"full": full}, _results(full), WHEN,
+                          ipv6_baseline={"full": 648, "lite": 120})
+            names = {p.name for p in Path(tmp).iterdir()}
+            stats = json.loads((Path(tmp) / "stats.json").read_text())
+        self.assertFalse([n for n in names if "6" in n])
+        self.assertEqual(stats["ipv6"], {"published": False, "variants": {
+            "full": {"total": 648}, "lite": {"total": 120}}})
+
+    def test_precomputed_ipv6_files_are_written(self):
+        full = [IPv4Network("8.8.8.8/32")]
+        full6 = [IPv6Network("2a00:1::/32")]
+        files6 = ipv6_files({"full": full6}, WHEN, "3.3.0")
+        self.assertEqual(set(files6), {"blocklist6.txt", "routeros6-full.txt"})
+        with tempfile.TemporaryDirectory() as tmp:
+            write_outputs(Path(tmp), {"full": full}, _results(full), WHEN, "3.3.0",
+                          variants6={"full": full6}, files6=files6)
+            self.assertEqual((Path(tmp) / "blocklist6.txt").read_text(), "2a00:1::/32\n")
+
+    def test_source_entries_count_only_ipv4(self):
+        src = Source("mix", "https://x", "plain", "attack")
+        res = [SourceResult(src, [IPv4Network("8.8.8.8/32"), IPv6Network("2a00::1/128"),
+                                  IPv6Network("2a00::2/128")], 0, None)]
+        with tempfile.TemporaryDirectory() as tmp:
+            write_outputs(Path(tmp), {"full": []}, res, WHEN)
+            stats = json.loads((Path(tmp) / "stats.json").read_text())
+        self.assertEqual(stats["sources"]["mix"]["entries"], 1)
+        self.assertEqual(stats["sources"]["mix"]["entries6"], 2)
 
     def test_write_outputs_requires_full(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -129,7 +191,7 @@ class RenderTest(unittest.TestCase):
         self.assertEqual(stats["generated_at"], "2026-10-19T04:17:00Z")
         self.assertEqual(
             stats["sources"]["spamhaus-drop"],
-            {"category": "attack", "entries": 61234, "invalid": 2, "error": None},
+            {"category": "attack", "entries": 61234, "entries6": 0, "invalid": 2, "error": None},
         )
         self.assertEqual(
             entries,
@@ -158,18 +220,27 @@ class RenderTest(unittest.TestCase):
         self.assertIn("GPL-3.0", notice)
         self.assertIn("2026-10-19T04:17:00Z", notice)
         rows = [l for l in notice.splitlines() if l.startswith("| ")]
-        self.assertEqual(rows[0], "| source | url | category | license / terms | variants | entries | error |")
+        self.assertEqual(rows[0], "| source | url | category | license / terms | variants | entries | entries6 | error |")
         self.assertIn("| spamhaus-drop | https://www.spamhaus.org/drop/drop.txt | attack "
-                      "| Spamhaus DROP terms | full | 2 |  |", rows)
+                      "| Spamhaus DROP terms | full | 2 | 0 |  |", rows)
         self.assertIn("| dshield | https://www.dshield.org/block.txt | attack | CC BY-NC-SA "
-                      "| full | 0 | HTTPError: HTTP Error 503: down |", rows)
+                      "| full | 0 | 0 | HTTPError: HTTP Error 503: down |", rows)
+
+    def test_notice_counts_ipv4_and_ipv6_separately(self):
+        src = Source("mix", "https://x", "plain", "attack")
+        res = [SourceResult(src, [IPv4Network("8.8.8.8/32"), IPv6Network("2a00::1/128"),
+                                  IPv6Network("2a00::2/128")], 0, None)]
+        with tempfile.TemporaryDirectory() as tmp:
+            write_outputs(Path(tmp), {"full": []}, res, WHEN)
+            notice = (Path(tmp) / "NOTICE.md").read_text()
+        self.assertIn("| mix | https://x | attack |  | full | 1 | 2 |  |", notice)
 
     def test_notice_escapes_pipes(self):
         src = Source("s", "https://x", "plain", "attack", license_note="a | b")
         with tempfile.TemporaryDirectory() as tmp:
             write_outputs(Path(tmp), {"full": []}, [SourceResult(src, [], 0, "x|y")], WHEN)
             notice = (Path(tmp) / "NOTICE.md").read_text()
-        self.assertIn("| s | https://x | attack | a \\| b | full | 0 | x\\|y |", notice)
+        self.assertIn("| s | https://x | attack | a \\| b | full | 0 | 0 | x\\|y |", notice)
 
 
 if __name__ == "__main__":

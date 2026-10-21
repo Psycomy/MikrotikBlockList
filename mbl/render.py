@@ -1,7 +1,7 @@
 """Rendering of the published output files."""
 import json
 from datetime import datetime, timezone
-from ipaddress import IPv4Network
+from ipaddress import IPv4Network, IPv6Network
 from pathlib import Path
 
 from mbl.fetch import SourceResult
@@ -11,8 +11,9 @@ PROJECT_URL = "https://github.com/Psycomy/MikrotikBlockList"
 NOTICE_URL = PROJECT_URL + "/blob/lists/NOTICE.md"
 
 
-def _cidr(net: IPv4Network) -> str:
-    return str(net.network_address) if net.prefixlen == 32 else str(net)
+def _cidr(net: IPv4Network | IPv6Network) -> str:
+    host = 32 if net.version == 4 else 128
+    return str(net.network_address) if net.prefixlen == host else str(net)
 
 
 def _rsc(addresses: list[str], stamp: str) -> str:
@@ -58,12 +59,14 @@ def _notice(results: list[SourceResult], stamp: str) -> str:
         "",
         f"Build: {stamp}",
         "",
-        "| source | url | category | license / terms | variants | entries | error |",
-        "|---|---|---|---|---|---|---|",
+        "| source | url | category | license / terms | variants | entries | entries6 | error |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for r in results:
         s = r.source
-        cells = [s.name, s.url, s.category, s.license_note, ", ".join(s.variants), str(len(r.networks)), r.error or ""]
+        entries = sum(1 for n in r.networks if n.version == 4)
+        cells = [s.name, s.url, s.category, s.license_note, ", ".join(s.variants),
+                 str(entries), str(len(r.networks) - entries), r.error or ""]
         lines.append("| " + " | ".join(_cell(c) for c in cells) + " |")
     return "\n".join(lines) + "\n"
 
@@ -72,14 +75,36 @@ def _json(data: dict) -> str:
     return json.dumps(data, indent=2) + "\n"
 
 
+def ipv6_files(variants6: dict[str, list[IPv6Network]], generated_at: datetime,
+               script_version: str = "0.0.0") -> dict[str, str]:
+    """Contents of the IPv6 files, by file name."""
+    stamp = generated_at.astimezone(timezone.utc).strftime(TIME_FORMAT)
+    files = {}
+    for v, nets in variants6.items():
+        addrs = [_cidr(n) for n in nets]
+        plain = "blocklist6.txt" if v == "full" else f"blocklist6-{v}.txt"
+        files[plain] = "".join(a + "\n" for a in addrs)
+        files[f"routeros6-{v}.txt"] = router_txt(addrs, stamp, script_version,
+                                                 variant=v, family="ipv6")
+    return files
+
+
 def write_outputs(
     out_dir: Path,
     variants: dict[str, list[IPv4Network]],
     results: list[SourceResult],
     generated_at: datetime,
     script_version: str = "0.0.0",
+    variants6: dict[str, list[IPv6Network]] | None = None,
+    ipv6_baseline: dict[str, int] | None = None,
+    files6: dict[str, str] | None = None,
 ) -> None:
-    """Write every published file; the "full" variant is mandatory."""
+    """Write every published file; the "full" variant is mandatory.
+
+    variants6 None means IPv6 is withheld: no IPv6 files, and stats.json keeps
+    ipv6_baseline (the last published IPv6 totals) so the next build still
+    compares against it. files6 are precomputed IPv6 contents (see ipv6_files).
+    """
     if "full" not in variants:
         raise ValueError("variants must include 'full'")
     out_dir = Path(out_dir)
@@ -87,16 +112,28 @@ def write_outputs(
     generated_at = generated_at.astimezone(timezone.utc)
     stamp = generated_at.strftime(TIME_FORMAT)
     addresses = {v: [_cidr(n) for n in nets] for v, nets in variants.items()}
+    if variants6 is None:
+        totals6 = dict(ipv6_baseline or {})
+        files6 = {}
+    else:
+        totals6 = {v: len(nets) for v, nets in variants6.items()}
+        if files6 is None:
+            files6 = ipv6_files(variants6, generated_at, script_version)
     total = len(addresses["full"])
 
     stats = {
         "generated_at": stamp,
         "total": total,
         "variants": {v: {"total": len(a)} for v, a in addresses.items()},
+        "ipv6": {
+            "published": variants6 is not None,
+            "variants": {v: {"total": n} for v, n in totals6.items()},
+        },
         "sources": {
             r.source.name: {
                 "category": r.source.category,
-                "entries": len(r.networks),
+                "entries": sum(1 for n in r.networks if n.version == 4),
+                "entries6": sum(1 for n in r.networks if n.version == 6),
                 "invalid": r.invalid,
                 "error": r.error,
             }
@@ -127,5 +164,6 @@ def write_outputs(
         plain = "blocklist.txt" if v == "full" else f"blocklist-{v}.txt"
         files[plain] = "".join(a + "\n" for a in addrs)
         files[f"routeros-{v}.txt"] = router_txt(addrs, stamp, script_version, variant=v)
+    files.update(files6)
     for name, content in files.items():
         (out_dir / name).write_text(content, encoding="utf-8", newline="\n")

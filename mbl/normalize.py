@@ -1,7 +1,7 @@
 """Network normalization: filtering, allowlist subtraction, collapse and sort."""
 from bisect import bisect_right
 from collections.abc import Iterable
-from ipaddress import IPv4Network, collapse_addresses
+from ipaddress import IPv4Network, IPv6Network, collapse_addresses
 
 # IANA special-purpose / non-global IPv4 blocks. A network overlapping any of
 # these is dropped entirely (is_global alone misses partial overlaps such as
@@ -40,7 +40,7 @@ def _is_blockable(net: IPv4Network) -> bool:
     return net.is_global and not net.is_multicast and not net.is_reserved
 
 
-def _subtract(net: IPv4Network, allow: list[IPv4Network], starts: list[int]) -> list[IPv4Network]:
+def _subtract(net, allow: list, starts: list[int]) -> list:
     """Remove allowlist entries (sorted, disjoint) from net; only touches overlaps."""
     i = max(bisect_right(starts, int(net.network_address)) - 1, 0)
     pieces = [net]
@@ -49,7 +49,7 @@ def _subtract(net: IPv4Network, allow: list[IPv4Network], starts: list[int]) -> 
         i += 1
         if not a.overlaps(net):
             continue
-        nxt: list[IPv4Network] = []
+        nxt: list = []
         for p in pieces:
             if not p.overlaps(a) or p.subnet_of(a):
                 if not p.overlaps(a):
@@ -60,15 +60,57 @@ def _subtract(net: IPv4Network, allow: list[IPv4Network], starts: list[int]) -> 
     return pieces
 
 
-def normalize(
-    networks: Iterable[IPv4Network],
-    allowlist: Iterable[IPv4Network],
-    min_prefixlen: int = 8,
-) -> list[IPv4Network]:
-    kept = [n for n in networks if n.prefixlen >= min_prefixlen and _is_blockable(n)]
-    allow = sorted(collapse_addresses(allowlist))
+def _clean(networks, allowlist, version, min_prefixlen, blockable):
+    kept = [n for n in networks if n.version == version and n.prefixlen >= min_prefixlen
+            and blockable(n)]
+    allow = sorted(collapse_addresses(a for a in allowlist if a.version == version))
     starts = [int(a.network_address) for a in allow]
-    out: list[IPv4Network] = []
+    out: list = []
     for net in kept:
         out.extend(_subtract(net, allow, starts) if allow else [net])
     return sorted(collapse_addresses(out))
+
+
+def normalize(
+    networks: Iterable[IPv4Network | IPv6Network],
+    allowlist: Iterable[IPv4Network | IPv6Network],
+    min_prefixlen: int = 8,
+) -> list[IPv4Network]:
+    """IPv4 only: IPv6 networks (and IPv6 allowlist entries) are ignored."""
+    return _clean(networks, allowlist, 4, min_prefixlen, _is_blockable)
+
+
+# Non-global IPv6 blocks: unspecified/loopback/IPv4-mapped (::/8), NAT64,
+# Teredo, documentation (incl. 3fff::/20), 6to4, ULA, link-local and multicast. Overlap drops.
+NON_GLOBAL_BLOCKS6: tuple[IPv6Network, ...] = tuple(
+    IPv6Network(n)
+    for n in (
+        "::/8",
+        "64:ff9b::/96",
+        "64:ff9b:1::/48",
+        "2001::/32",
+        "2001:db8::/32",
+        "2002::/16",
+        "3fff::/20",
+        "fc00::/7",
+        "fe80::/10",
+        "ff00::/8",
+    )
+)
+_NON_GLOBAL_RANGES6 = tuple((int(b.network_address), int(b.broadcast_address)) for b in NON_GLOBAL_BLOCKS6)
+
+
+def _is_blockable6(net: IPv6Network) -> bool:
+    first, last = int(net.network_address), int(net.broadcast_address)
+    if any(first <= hi and lo <= last for lo, hi in _NON_GLOBAL_RANGES6):
+        return False
+    return net.is_global  # also drops e.g. 100::/64, 2001:2::/48, 2001:10::/28
+
+
+def normalize6(
+    networks: Iterable[IPv4Network | IPv6Network],
+    allowlist: Iterable[IPv4Network | IPv6Network],
+    min_prefixlen: int = 19,
+) -> list[IPv6Network]:
+    """IPv6 only: drop non-global and anything wider than min_prefixlen, subtract allowlist."""
+    return _clean(networks, allowlist, 6, min_prefixlen, _is_blockable6)
