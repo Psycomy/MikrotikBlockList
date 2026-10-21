@@ -17,6 +17,11 @@ published list carries it as `script=<version>` in its header.
 - The router never updates itself; reinstalling stays a manual step.
 - CI check that `VERSION` and the installer version stay in sync.
 - End-to-end cases `test_14b` to `test_14e` for the notice.
+- The installer's final message now includes the installed script version (`MBL: installed (script 3.1.0)`).
+
+### Upgrade from 3.0.0
+Routers installed before 3.1.0 (v2 and 3.0.0) do not contain the version check, so they never show the
+newer-script notice. Run the install command once more to get it; later releases are then announced.
 
 ## [3.0.0] - 2026-10-21
 
@@ -25,7 +30,7 @@ published list carries it as `script=<version>` in its header.
   chunks and validates every line as an IPv4 address or prefix before adding it, so nothing in the file
   is ever executed. It also checks the header/footer, the entry count and the share of invalid lines
   (rejected above 1 %); a rejected download keeps the active list.
-- The list is published as plain text, `lists/routeros-full.txt`, together with `VERSION`.
+- The list is published as plain text, `lists/routeros-full.txt`; its header carries the script version (`script=`, from the new `VERSION` file).
 - The backup of the last good list is `mbl-last.txt` (v2 used `mbl-last.rsc`).
 
 ### Added
@@ -35,6 +40,7 @@ published list carries it as `script=<version>` in its header.
 ### Upgrade from v2
 Run the install command again. The installer replaces the v2 updater, the first load removes the old
 `mbl-*.rsc` files (`MBL: removed v2 files`) and the active list is never left empty.
+`blocklist.rsc` keeps being published unchanged for v2 routers until at least 2027-04-30.
 
 ## [2.0.0] - 2026-10-19 (tagged 2026-10-21)
 

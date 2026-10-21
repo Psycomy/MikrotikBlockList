@@ -553,10 +553,10 @@
 }
 /file remove [find where name="install.rsc" or name="flash/install.rsc"]
 :if ($mblLastOk = true) do={
-  :put "MBL: installed"
-  :log info "MBL: installed"
+  :put "MBL: installed (script $mblScriptVersion)"
+  :log info "MBL: installed (script $mblScriptVersion)"
 } else={
-  :put "MBL: WARNING installed, but the first load failed or was skipped. See /log print where message~\"MBL\""
-  :log warning "MBL: installed, but the first load failed or was skipped"
+  :put "MBL: WARNING installed (script $mblScriptVersion), but the first load failed or was skipped. See /log print where message~\"MBL\""
+  :log warning "MBL: installed (script $mblScriptVersion), but the first load failed or was skipped"
 }
 }

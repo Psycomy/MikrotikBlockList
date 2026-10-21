@@ -162,6 +162,9 @@ When the router logs a warning like `MBL: script 3.2.0 available (installed 3.1.
 a newer version of the router script has been published. Run the install command again; it is safe
 to repeat and keeps your allowlist. The router never updates itself, and the notice only appears when
 the published version is newer. The blocklist itself refreshes daily without any action.
+
+Routers installed before 3.1.0 (v2 and 3.0.0) do not have the check, so they never show this
+notice: reinstall once with the install command to get it.
 See the [CHANGELOG](CHANGELOG.md) for what changed.
 
 ## Uninstall
@@ -401,6 +404,9 @@ hay publicada una versión más nueva del script. Basta con volver a ejecutar el
 se puede repetir sin riesgo y conserva tu allowlist. El router nunca se actualiza solo y el aviso solo
 sale si la versión publicada es mayor. La lista se renueva cada día sin hacer nada. Los cambios están
 en el [CHANGELOG](CHANGELOG.md).
+
+Los routers instalados antes de la 3.1.0 (v2 y 3.0.0) no incluyen esta comprobación y nunca muestran
+el aviso: reinstala una vez con el comando de instalación para activarla.
 
 ### Desinstalación
 
