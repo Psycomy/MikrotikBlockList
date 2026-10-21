@@ -97,10 +97,12 @@ SCRIPT_VARIANTS = {
 
 
 def _synthetic_list(out_dir: Path) -> None:
-    """LIST_SIZE consecutive global /32s from 45.0.0.0; no real sources."""
+    """LIST_SIZE global /32s from 45.0.0.0 (full) and 2,000 from 46.0.0.0 (lite); no real sources."""
     first = int(IPv4Address("45.0.0.0"))
     networks = [IPv4Network(IPv4Address(first + i)) for i in range(LIST_SIZE)]
-    write_outputs(out_dir, networks, [], datetime.now(timezone.utc))
+    lite_first = int(IPv4Address("46.0.0.0"))
+    lite = [IPv4Network(IPv4Address(lite_first + i)) for i in range(2000)]
+    write_outputs(out_dir, {"full": networks, "lite": lite}, [], datetime.now(timezone.utc))
 
 
 def _local_ip_towards(host: str) -> str:
@@ -155,6 +157,10 @@ class RouterOsTest(unittest.TestCase):
                 [ln + (" " if i < 10 else "") for i, ln in enumerate(body)], footer, "\r\n")
         variant("routeros-full-invalid.txt", header,
                 body + [f"bad-line-{i}" for i in range(LIST_SIZE // 50)], footer)
+        lite_text = (served / "routeros-lite.txt").read_text()
+        assert "variant=lite" in lite_text.splitlines()[0], lite_text.splitlines()[0]
+        (served / "routeros-lite-wrongheader.txt").write_text(
+            lite_text.replace("variant=lite", "variant=full", 1))
         cls.installed_version = (REPO / "VERSION").read_text().strip()
         assert re.search(r" script=\S*$", header.rstrip("\n")), header
         for name, published in SCRIPT_VARIANTS.items():
@@ -337,7 +343,7 @@ class RouterOsTest(unittest.TestCase):
         # every line is loaded, including those cut between two /file read chunks
         self.assertEqual(self.count(self.active_list()), LIST_SIZE)
         log = self.log()
-        self.assertIn(f"MBL: installed (script {self.installed_version})", log)
+        self.assertIn(f"MBL: installed (script {self.installed_version}, variant full)", log)
         warning = f"MBL: using test URL base {self.base}"
         self.assertTrue(any(warning in ln and "warning" in ln.split(" ", 1)[0]
                             for ln in log.splitlines()), log)
@@ -628,6 +634,63 @@ class RouterOsTest(unittest.TestCase):
                 _, notices = self.script_notices(name)
                 self.assertEqual(len(notices), 1, notices)
                 self.assertIn(f"MBL: script {published} available", notices[0])
+
+    def install_variant(self, value: str) -> str:
+        """Install with `:global mblVariant`; the global persists, so always set it."""
+        self.chr.upload(ROUTEROS / "install.rsc", "install.rsc")
+        return self.chr.run(
+            f':global mblUrlBase "{self.base}"; :global mblVariant "{value}"; /import install.rsc',
+            timeout=600)
+
+    def test_14f_install_lite(self):
+        self.server.requests.clear()
+        token = self.mark()
+        out = self.install_variant("lite")
+        self.assertIn("/routeros-lite.txt", self.server.requests)
+        self.assertEqual(self.count(self.active_list()), 2000)
+        self.assertIn(f"MBL: installed (script {self.installed_version}, variant lite)",
+                      self.log_after(token))
+        self.assertIn("variant lite", out)
+        self.assertIn("routeros-lite.txt", self.update_source())
+
+    def test_14g_reinstall_keeps_lite(self):
+        self.server.requests.clear()
+        self.install_variant("")
+        self.assertIn("/routeros-lite.txt", self.server.requests)
+        self.assertNotIn("/routeros-full.txt", self.server.requests)
+        self.assertEqual(self.count(self.active_list()), 2000)
+        self.assertIn("routeros-lite.txt", self.update_source())
+
+    def test_14h_invalid_variant_rejected(self):
+        active, n = self.active_list(), self.count(self.active_list())
+        self.server.requests.clear()
+        try:
+            out = self.install_variant("mini")
+        except ChrError as e:
+            out = str(e)
+        self.assertIn("invalid mblVariant", out)
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
+        self.assertEqual(self.active_list(), active)
+        self.assertEqual(self.count(active), n)
+        self.assertEqual(self.server.requests, [])
+        self.assertIn("routeros-lite.txt", self.update_source())
+
+    def test_14i_variant_mismatch_rejected(self):
+        name = "routeros-lite-wrongheader.txt"
+        self.assertIn("routeros-lite.txt", self.update_source())
+        self.set_update_path("/routeros-lite.txt", f"/{name}")
+        try:
+            self.assert_failed_update_keeps_active(
+                f"/{name}", "MBL: mbl-new.txt rejected (bad header)")
+        finally:
+            self.set_update_path(f"/{name}", "/routeros-lite.txt")
+
+    def test_14j_back_to_full(self):
+        self.server.requests.clear()
+        self.install_variant("full")
+        self.assertIn("/routeros-full.txt", self.server.requests)
+        self.assertEqual(self.count(self.active_list()), LIST_SIZE)
+        self.assertIn("routeros-full.txt", self.update_source())
 
     def test_15_final_uninstall(self):
         self.uninstall()

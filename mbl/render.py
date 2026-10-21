@@ -58,12 +58,12 @@ def _notice(results: list[SourceResult], stamp: str) -> str:
         "",
         f"Build: {stamp}",
         "",
-        "| source | url | category | license / terms | entries | error |",
-        "|---|---|---|---|---|---|",
+        "| source | url | category | license / terms | variants | entries | error |",
+        "|---|---|---|---|---|---|---|",
     ]
     for r in results:
         s = r.source
-        cells = [s.name, s.url, s.category, s.license_note, str(len(r.networks)), r.error or ""]
+        cells = [s.name, s.url, s.category, s.license_note, ", ".join(s.variants), str(len(r.networks)), r.error or ""]
         lines.append("| " + " | ".join(_cell(c) for c in cells) + " |")
     return "\n".join(lines) + "\n"
 
@@ -74,21 +74,25 @@ def _json(data: dict) -> str:
 
 def write_outputs(
     out_dir: Path,
-    networks: list[IPv4Network],
+    variants: dict[str, list[IPv4Network]],
     results: list[SourceResult],
     generated_at: datetime,
     script_version: str = "0.0.0",
 ) -> None:
+    """Write every published file; the "full" variant is mandatory."""
+    if "full" not in variants:
+        raise ValueError("variants must include 'full'")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     generated_at = generated_at.astimezone(timezone.utc)
     stamp = generated_at.strftime(TIME_FORMAT)
-    addresses = [_cidr(n) for n in networks]
-    total = len(addresses)
+    addresses = {v: [_cidr(n) for n in nets] for v, nets in variants.items()}
+    total = len(addresses["full"])
 
     stats = {
         "generated_at": stamp,
         "total": total,
+        "variants": {v: {"total": len(a)} for v, a in addresses.items()},
         "sources": {
             r.source.name: {
                 "category": r.source.category,
@@ -113,13 +117,15 @@ def write_outputs(
     }
 
     files = {
-        "blocklist.rsc": _rsc(addresses, stamp),
-        "blocklist.txt": "".join(a + "\n" for a in addresses),
-        "routeros-full.txt": router_txt(addresses, stamp, script_version),
+        "blocklist.rsc": _rsc(addresses["full"], stamp),
         "stats.json": _json(stats),
         "badge-entries.json": _json(badge_entries),
         "badge-updated.json": _json(badge_updated),
         "NOTICE.md": _notice(results, stamp),
     }
+    for v, addrs in addresses.items():
+        plain = "blocklist.txt" if v == "full" else f"blocklist-{v}.txt"
+        files[plain] = "".join(a + "\n" for a in addrs)
+        files[f"routeros-{v}.txt"] = router_txt(addrs, stamp, script_version, variant=v)
     for name, content in files.items():
         (out_dir / name).write_text(content, encoding="utf-8", newline="\n")

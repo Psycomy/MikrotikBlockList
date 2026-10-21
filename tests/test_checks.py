@@ -1,9 +1,12 @@
 import unittest
 
-from mbl.checks import safety_errors
+from mbl.checks import LIMITS, safety_errors
 
 
 class SafetyErrorsTest(unittest.TestCase):
+    def test_limits_per_variant(self):
+        self.assertEqual(LIMITS, {"full": (5000, 150000), "lite": (1000, 20000)})
+
     def test_ok(self):
         self.assertEqual(safety_errors(60000, 58000, []), [])
 
@@ -54,6 +57,11 @@ class SafetyErrorsTest(unittest.TestCase):
         self.assertEqual(len(safety_errors(150001, 30000, [], allow_growth=True)), 1)
         self.assertEqual(len(safety_errors(10000, 30000, [], allow_growth=True)), 1)
         self.assertEqual(len(safety_errors(60001, 30000, ["x"], allow_growth=True)), 1)
+
+    def test_explained_drop_skips_only_drop_check(self):
+        self.assertEqual(safety_errors(20000, 60000, [], explained_drop=40000), [])
+        self.assertEqual(len(safety_errors(20000, 60000, [], explained_drop=39999)), 1)
+        self.assertEqual(len(safety_errors(4000, 60000, [], explained_drop=60000)), 1)
 
     def test_multiple_problems_multiple_errors(self):
         errors = safety_errors(1000, 60000, ["spamhaus-drop"])
