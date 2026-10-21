@@ -9,8 +9,9 @@ address as seen from that router.
 Existing-host mode is DESTRUCTIVE: it reinstalls MBL, reboots the router and
 finally runs uninstall.rsc, so any previous MBL installation there is gone.
 It therefore also requires MBL_E2E_DESTRUCTIVE=1; without it the class is
-skipped. A best-effort uninstall also runs if a case aborts early or the run
-is interrupted (atexit); after a run killed outright, run uninstall.rsc by hand.
+skipped. A best-effort uninstall (which also removes the test's /ip dns static
+entries, comment MBLTEST) also runs if a case aborts early or the run is
+interrupted (atexit); after a run killed outright, run uninstall.rsc by hand.
 
 Other environment variables: MBL_E2E_CHR_VERSION / MBL_E2E_CHR_SHA256 override the
 pinned tests/e2e/chr-version.txt (an empty SHA256 skips the checksum), and
@@ -248,6 +249,8 @@ class RouterOsTest(unittest.TestCase):
             cls.chr.run("/import uninstall.rsc", timeout=300)
         with suppress(ChrError, OSError):
             cls.chr.run(':global mblUrlBase ""')
+        with suppress(ChrError, OSError):
+            cls.chr.run(f'/ip dns static remove [find where comment="{DNS_COMMENT}"]')
 
     @classmethod
     def _artifacts(cls) -> Path | None:
@@ -355,13 +358,50 @@ class RouterOsTest(unittest.TestCase):
         self.set_update_path(f"/{name}", "/routeros-full.txt")
 
     def sample_protection(self) -> str:
-        """'<list the MBL: in rule points to> <its entries>', or 'none 0' without the rule."""
+        """'<list the in drop rule points to> <its entries>', or 'none 0' without the rule.
+
+        The rule is "MBL: in", or "MBL-OLD: MBL: in" while a reinstall renames
+        the old rules (they keep dropping until the new ones are added)."""
         return self.chr.run(
             '{:local r [/ip firewall raw find where comment="MBL: in"];'
+            ':if ([:len $r] = 0) do={:set r [/ip firewall raw find where comment="MBL-OLD: MBL: in"]};'
             ':if ([:len $r] = 0) do={:put "none 0"} else={'
             ':local l [/ip firewall raw get ($r->0) src-address-list];'
             ':put ($l . " " . [:len [/ip firewall address-list find where list=$l]])}}'
         ).strip()
+
+    def install_sampled(self) -> list[str]:
+        """Install (test URL base) while another thread samples sample_protection()
+        every 0.5 s; return the samples, the last one taken after the install."""
+        samples: list[str] = []
+        stop = threading.Event()
+
+        def poll():
+            while not stop.is_set():
+                try:
+                    samples.append(self.sample_protection())
+                except ChrError as e:
+                    samples.append(f"error {e}")
+                stop.wait(0.5)
+
+        poller = threading.Thread(target=poll, daemon=True)
+        poller.start()
+        try:
+            self.install(self.base)
+        finally:
+            stop.set()
+            poller.join(30)
+        samples.append(self.sample_protection())
+        return samples
+
+    def assert_always_protected(self, samples: list[str]) -> None:
+        """Every sample has an in drop rule (see sample_protection) on a list with
+        at least MIN_ENTRIES."""
+        self.assertGreaterEqual(len(samples), 3, samples)
+        for smp in samples:
+            name, _, n = smp.partition(" ")
+            self.assertNotEqual(name, "none", f"rule missing: {samples}")
+            self.assertTrue(n.isdigit() and int(n) >= MIN_ENTRIES, f"{smp!r} in {samples}")
 
     # -- cases --------------------------------------------------------------
 
@@ -458,6 +498,23 @@ class RouterOsTest(unittest.TestCase):
         self.assertEqual(self.num("/ip firewall address-list", admin), admins)
         self.assertGreaterEqual(self.count(self.active_list()), MIN_ENTRIES)
 
+    def test_07b_reinstall_no_rule_gap(self):
+        # v3 -> v3: the old rules keep dropping (as MBL-OLD:) until the new ones exist
+        self.assertGreaterEqual(self.count(self.active_list()), MIN_ENTRIES)
+        self.assert_always_protected(self.install_sampled())
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL-OLD:"'), 0)
+
+    def test_07c_old_rules_cleaned(self):
+        # what an install aborted between the rename and the cleanup leaves behind
+        self.chr.run('/ip firewall raw add chain=prerouting in-interface-list=WAN '
+                     'src-address-list=mbl-a action=drop comment="MBL-OLD: in"')
+        self.assertEqual(self.num("/ip firewall raw", 'comment="MBL-OLD: in"'), 1)
+        self.install(self.base)
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL-OLD:"'), 0)
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
+        self.assertGreaterEqual(self.count(self.active_list()), MIN_ENTRIES)
+
     def test_08_uninstall_clean(self):
         lists = 'name="WAN" or name="LAN"'
         members = 'list="WAN" or list="LAN"'
@@ -509,42 +566,14 @@ class RouterOsTest(unittest.TestCase):
         rsc = 'name~"^mbl-.*\\\\.rsc"'
         self.assertEqual(self.num("/file", rsc), 1, self.chr.run("/file print"))  # pattern control
         token = self.mark()
-        samples: list[str] = []
-        stop = threading.Event()
-
-        def poll():
-            while not stop.is_set():
-                try:
-                    samples.append(self.sample_protection())
-                except ChrError as e:
-                    samples.append(f"error {e}")
-                stop.wait(0.5)
-
-        poller = threading.Thread(target=poll, daemon=True)
-        poller.start()
-        try:
-            self.install(self.base)
-        finally:
-            stop.set()
-            poller.join(30)
-        samples.append(self.sample_protection())
-        self.assertGreaterEqual(len(samples), 3, samples)
-        # every sample sees a populated list. The installer removes and recreates
-        # the rules, so a single sample without the rule is tolerated, no more.
-        prev_none = False
-        for smp in samples:
-            name, _, n = smp.partition(" ")
-            if name == "none":
-                self.assertFalse(prev_none, f"rule missing in 2 consecutive samples: {samples}")
-                prev_none = True
-                continue
-            prev_none = False
-            self.assertTrue(n.isdigit() and int(n) >= MIN_ENTRIES, f"{smp!r} in {samples}")
+        # every sample sees the rule on a populated list, with no gap at all
+        self.assert_always_protected(self.install_sampled())
         log = self.log_after(token)
         # the v3 load itself happened, whatever the final count says
         self.assertIn(f"MBL: loaded {LIST_SIZE} entries", log)
         self.assertIn("MBL: removed v2 files", log)
         self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL-OLD:"'), 0)
         self.assertEqual(self.num("/file", rsc), 0, self.chr.run("/file print"))
         self.assertEqual(self.num("/file", 'name="mbl-last.txt"'), 1, self.chr.run("/file print"))
         # the v3 load went to the other list (it does not clear the v2 one first)
@@ -886,11 +915,18 @@ class RouterOsTest(unittest.TestCase):
         # uninstall removes both families: give IPv6 something to remove first
         self.install_ipv6("true")
         self.assertGreater(self.mbl6_objects()["rules"], 0)
+        # and an MBL-OLD: rule per family, as an interrupted reinstall leaves
+        for path, lst in (("/ip firewall raw", "mbl-a"), ("/ipv6 firewall raw", "mbl6-a")):
+            self.chr.run(f'{path} add chain=prerouting src-address-list={lst} action=drop '
+                         'comment="MBL-OLD: in"')
+            self.assertEqual(self.num(path, 'comment~"^MBL-OLD:"'), 1, path)
         self.uninstall()
         self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 0)
         self.assertEqual(self.num("/system script", 'name~"^mbl-"'), 0)
         self.assertEqual(self.count("mbl-a") + self.count("mbl-b"), 0)
         self.assertEqual(self.mbl6_objects(), {"rules": 0, "entries": 0, "files": 0})
+        for path in ("/ip firewall raw", "/ipv6 firewall raw"):
+            self.assertEqual(self.num(path, 'comment~"^MBL-OLD:"'), 0, path)
 
 
 if __name__ == "__main__":

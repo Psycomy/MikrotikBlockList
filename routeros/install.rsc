@@ -6,6 +6,8 @@
 #   /tool fetch url="https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/main/routeros/install.rsc" check-certificate=yes; /import install.rsc
 #
 # Idempotent: re-running it removes and recreates everything named mbl-* / MBL:*.
+# The old MBL: raw rules keep dropping until the new ones are in place (they
+# are renamed MBL-OLD: and removed only after the new rules are added).
 # It never touches anything else, except enabling the RouterOS built-in CA
 # store for /tool fetch (needed for check-certificate=yes).
 #
@@ -36,7 +38,7 @@
 :local mblMinVersion "7.21"
 # Version of this installer and of the mbl-update it installs (= VERSION file).
 # mbl-update logs a warning when the published list says a newer one exists.
-:local mblScriptVersion "3.3.0"
+:local mblScriptVersion "3.3.1"
 
 # "7.21.3 (stable)" -> 7021 ; "7.19rc2" -> 7019
 :local mblVerNum do={
@@ -139,6 +141,9 @@
 # ------------------------------------------ 3. remove a previous installation
 # The address lists are kept so a reinstall never leaves the router
 # unprotected: the new rules point at the list that already has entries.
+# The raw rules are not removed here either: each "MBL: x" rule is renamed
+# "MBL-OLD: MBL: x" and keeps dropping until step 7 has added the new rules,
+# then every ^MBL-OLD: rule goes (also those left by an aborted install).
 # Files are kept too: v2 boot copies (mbl-*.rsc) are removed by mbl-update
 # only after its first successful load.
 :local prevList ""
@@ -146,7 +151,9 @@
 :if ([:len $prevIn] > 0) do={ :set prevList [/ip firewall raw get ($prevIn->0) src-address-list] }
 /system scheduler remove [find where name~"^mbl-"]
 /system script remove [find where name~"^mbl-"]
-/ip firewall raw remove [find where comment~"^MBL:"]
+:foreach r in=[/ip firewall raw find where comment~"^MBL:"] do={
+  /ip firewall raw set $r comment=("MBL-OLD: " . [/ip firewall raw get $r comment])
+}
 :local na [:len [/ip firewall address-list find where list="mbl-a"]]
 :local nb [:len [/ip firewall address-list find where list="mbl-b"]]
 # active = the list with entries (the previous one if both have entries).
@@ -156,18 +163,22 @@
 :if ($na > 0 && ($nb = 0 || $prevList != "mbl-b")) do={ :set active "mbl-a" }
 # mbl-allow is kept as is (user entries and previous "MBL: admin" entries).
 # IPv6, the same way with mbl6-a / mbl6-b. With IPv6 off, every MBL IPv6
-# object of an earlier installation goes: rules, lists, "MBL: admin" entries
-# in mbl6-allow (your own entries there are kept) and mbl6-* files.
+# object of an earlier installation goes: rules (MBL: and MBL-OLD:), lists,
+# "MBL: admin" entries in mbl6-allow (your own entries there are kept) and
+# mbl6-* files.
 :local prevList6 ""
 :local prevIn6 [/ipv6 firewall raw find where comment="MBL: in"]
 :if ([:len $prevIn6] > 0) do={ :set prevList6 [/ipv6 firewall raw get ($prevIn6->0) src-address-list] }
-/ipv6 firewall raw remove [find where comment~"^MBL:"]
 :local active6 "mbl6-b"
 :if ($mblV6 = "yes") do={
+  :foreach r in=[/ipv6 firewall raw find where comment~"^MBL:"] do={
+    /ipv6 firewall raw set $r comment=("MBL-OLD: " . [/ipv6 firewall raw get $r comment])
+  }
   :local na6 [:len [/ipv6 firewall address-list find where list="mbl6-a"]]
   :local nb6 [:len [/ipv6 firewall address-list find where list="mbl6-b"]]
   :if ($na6 > 0 && ($nb6 = 0 || $prevList6 != "mbl6-b")) do={ :set active6 "mbl6-a" }
 } else={
+  /ipv6 firewall raw remove [find where comment~"^MBL(-OLD)?:"]
   /ipv6 firewall address-list remove [find where list="mbl6-a" or list="mbl6-b"]
   /ipv6 firewall address-list remove [find where list="mbl6-allow" and comment="MBL: admin"]
   /file remove [find where name~"^(flash/)?mbl6-.*\\.txt\$"]
@@ -684,6 +695,9 @@ $mblInject "@MBL_IPV6@" $mblV6
 
 # ------------------------------------------------- 7. raw rules (at the top)
 # Drop rules point at $active / $active6 (see step 3); mbl-update switches them later.
+# The anchor is the first raw rule, whatever it is: on a reinstall usually the
+# first MBL-OLD: rule, so the new rules go where the old ones were (at the top
+# unless you moved them) and the user's own rules keep their order below.
 :local existing [/ip firewall raw find]
 :if ([:len $existing] = 0) do={
   /ip firewall raw add chain=prerouting src-address-list=mbl-allow action=accept comment="MBL: allow-in"
@@ -722,6 +736,9 @@ $mblInject "@MBL_IPV6@" $mblV6
     /ipv6 firewall raw add chain=output dst-address-list=$active6 action=drop comment="MBL: router-out" place-before=$anchor6
   }
 }
+# The new rules are in place: only now do the old ones go.
+/ip firewall raw remove [find where comment~"^MBL-OLD:"]
+/ipv6 firewall raw remove [find where comment~"^MBL-OLD:"]
 
 # -------------------------------------------------------- 8. first load
 :global mblRunning

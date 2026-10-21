@@ -4,7 +4,8 @@
 # Usage:
 #   /tool fetch url="https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/main/routeros/uninstall.rsc" check-certificate=yes; /import uninstall.rsc
 #
-# Removes only what install.rsc created (names mbl-* / comments MBL:*).
+# Removes only what install.rsc created (names mbl-* / comments MBL:* and
+# MBL-OLD:*, the old rules an interrupted reinstall may leave).
 # Both families (IPv4 and IPv6). Entries you added yourself to mbl-allow
 # or mbl6-allow are kept.
 # The built-in CA store setting is left as is: the "fetch" component that
@@ -13,11 +14,11 @@
 {
 /system scheduler remove [find where name~"^mbl-"]
 /system script remove [find where name~"^mbl-"]
-/ip firewall raw remove [find where comment~"^MBL:"]
+/ip firewall raw remove [find where comment~"^MBL(-OLD)?:"]
 /ip firewall address-list remove [find where list="mbl-a"]
 /ip firewall address-list remove [find where list="mbl-b"]
 /ip firewall address-list remove [find where list="mbl-allow" and comment="MBL: admin"]
-/ipv6 firewall raw remove [find where comment~"^MBL:"]
+/ipv6 firewall raw remove [find where comment~"^MBL(-OLD)?:"]
 /ipv6 firewall address-list remove [find where list="mbl6-a"]
 /ipv6 firewall address-list remove [find where list="mbl6-b"]
 /ipv6 firewall address-list remove [find where list="mbl6-allow" and comment="MBL: admin"]

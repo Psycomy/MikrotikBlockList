@@ -67,8 +67,11 @@ jobs:
             sha="$pinned_sha"
           fi
           # Whatever the source (input, upgrade server, pinned file), only a
-          # plain version string reaches GITHUB_OUTPUT / GITHUB_ENV.
-          if ! printf '%s' "$version" | grep -Eq '^[0-9]+(\.[0-9]+)+([a-z]+[0-9]+)?$'; then
+          # plain version string reaches GITHUB_OUTPUT / GITHUB_ENV. Bash [[ =~ ]]
+          # matches the whole string, so a multi-line value never passes (grep
+          # would accept it when any one line matches).
+          re='^[0-9]+(\.[0-9]+)+([a-z]+[0-9]+)?$'
+          if ! [[ $version =~ $re ]]; then
             echo "::error::invalid CHR version: $version"
             exit 1
           fi
