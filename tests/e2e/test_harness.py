@@ -128,6 +128,42 @@ class EnsureImageTest(unittest.TestCase):
             self.assertEqual(img.read_bytes(), b"disk")
             self.assertEqual(len(calls), 3)
 
+    def test_ensure_image_retries_truncated_download(self):
+        # download.mikrotik.com sometimes closes the connection before the full
+        # Content-Length; http.client returns the short body without an error.
+        import http.server
+        import threading
+
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp, "src.zip")
+            with zipfile.ZipFile(src, "w") as z:
+                z.writestr("chr-test.img", b"disk" * 10000)
+            body = src.read_bytes()
+            hits = []
+
+            class Handler(http.server.BaseHTTPRequestHandler):
+                def do_GET(self):
+                    hits.append(self.path)
+                    self.send_response(200)
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body if len(hits) > 1 else body[: len(body) // 2])
+                    self.close_connection = True
+
+                def log_message(self, *args):
+                    pass
+
+            srv = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            self.addCleanup(srv.server_close)
+            self.addCleanup(srv.shutdown)
+            url = f"http://127.0.0.1:{srv.server_port}/chr-{{version}}.img.zip"
+            good = hashlib.sha256(body).hexdigest()
+            with mock.patch.object(harness, "IMAGE_URL", url):
+                img = ensure_image("test", good, Path(tmp, "cache"), backoff=0)
+            self.assertEqual(img.read_bytes(), b"disk" * 10000)
+            self.assertEqual(len(hits), 2)
+
     def test_ensure_image_gives_up_after_three_attempts(self):
         with tempfile.TemporaryDirectory() as tmp:
             down = mock.Mock(side_effect=urllib.error.URLError("down"))

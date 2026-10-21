@@ -107,6 +107,11 @@ def ensure_image(version: str, sha256: str | None, cache: Path, backoff: float =
             try:
                 with urllib.request.urlopen(url, timeout=120) as r, open(part, "wb") as f:
                     shutil.copyfileobj(r, f)
+                    # http.client returns a short body without error when the
+                    # server closes early, so check it here and let _retry retry.
+                    expected = r.headers.get("Content-Length")
+                    if expected is not None and f.tell() != int(expected):
+                        raise ConnectionError(f"truncated download: got {f.tell()} of {expected} bytes")
             except OSError:
                 part.unlink(missing_ok=True)
                 raise
