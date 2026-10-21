@@ -29,6 +29,9 @@
 # per-service built-in CA store (/certificate settings builtin-trust-store,
 # 7.21 changelog). Tested on CHR 7.24.5.
 :local mblMinVersion "7.21"
+# Version of this installer and of the mbl-update it installs (= VERSION file).
+# mbl-update logs a warning when the published list says a newer one exists.
+:local mblScriptVersion "3.1.0"
 
 # "7.21.3 (stable)" -> 7021 ; "7.19rc2" -> 7019
 :local mblVerNum do={
@@ -109,7 +112,8 @@
 }
 
 # --------------------------------------------------- 5. mbl-update script
-# The body is stored verbatim; @MBL_URL@ is replaced with $mblUrl below.
+# The body is stored verbatim; @MBL_URL@ and @MBL_VERSION@ are replaced with
+# $mblUrl and $mblScriptVersion below.
 /system script add name=mbl-update policy=ftp,read,write,policy,test \
   dont-require-permissions=no comment="MBL: blocklist updater" source={
 # MikrotikBlockList v3 updater - installed by install.rsc, do not edit.
@@ -120,6 +124,7 @@
 # Nothing read from the file is ever executed: each line is only a value,
 # checked against the a.b.c.d[/p] form, :toip and the prefix range.
 :local url "@MBL_URL@"
+:local scriptVersion "@MBL_VERSION@"
 :local minSize 100000
 :local minEntries 1000
 # /file read returns at most 32768 bytes per call (RouterOS 7.24)
@@ -185,6 +190,33 @@
   :if ([:typeof $p] != "num") do={ :return "" }
   :local v [:pick $h ($p + [:len $2] + 2) [:len $h]]
   :return [:pick $v 0 [:find $v " "]]
+}
+# true if version $1 is newer than version $2, compared numerically by
+# MAJOR.MINOR.PATCH component (3.10.0 > 3.9.0). false when either one is not
+# of that form. Nothing is parsed or executed: only :tonum per component.
+:local mblVerGt do={
+  :local re "^[0-9]+\\.[0-9]+\\.[0-9]+\$"
+  :if (!($1 ~ $re) || !($2 ~ $re)) do={ :return false }
+  :local num do={
+    :local s $1
+    :while ([:len $s] > 1 && [:pick $s 0] = "0") do={ :set s [:pick $s 1 [:len $s]] }
+    :return [:tonum $s]
+  }
+  :local a ($1 . ".")
+  :local b ($2 . ".")
+  :local pa -1
+  :local pb -1
+  :for i from=1 to=3 do={
+    :local ea [:find $a "." $pa]
+    :local eb [:find $b "." $pb]
+    :local x [$num [:pick $a ($pa + 1) $ea]]
+    :local y [$num [:pick $b ($pb + 1) $eb]]
+    :if ($x > $y) do={ :return true }
+    :if ($x < $y) do={ :return false }
+    :set pa $ea
+    :set pb $eb
+  }
+  :return false
 }
 :local boot ($mblBoot = true)
 :set mblBoot false
@@ -256,6 +288,8 @@
     # over to the next one. $reason is set on the first fatal problem.
     :local reason ""
     :local gen "unknown"
+    # script version named in the list header; only compared and logged
+    :local pubScript ""
     :local entries -1
     :local footer -1
     :local first true
@@ -309,6 +343,7 @@
                   :local g [$mblField $ln "generated"]
                   # only a date-like value is logged or used for the stale check
                   :if ($g ~ "^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T") do={ :set gen $g }
+                  :set pubScript [$mblField $ln "script"]
                 }
               }
             } else={
@@ -443,6 +478,15 @@
         :if ($age > $maxAgeDays) do={ :log warning "MBL: list is $age days old" }
       }
     } on-error={}
+
+    # ---- newer script: only a notice, the router never updates itself.
+    # mblVerGt rejects any value that is not MAJOR.MINOR.PATCH, so only such
+    # a value is logged. Errors are ignored, as for the stale list warning.
+    :do {
+      :if ([$mblVerGt $pubScript $scriptVersion] = true) do={
+        :log warning ("MBL: script $pubScript available (installed $scriptVersion) - reinstall: /tool fetch url=\"https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/main/routeros/install.rsc\" check-certificate=yes; /import install.rsc")
+      }
+    } on-error={}
   } on-error={ :log warning "MBL: update aborted" }
   :set mblRunning false
 }
@@ -455,6 +499,13 @@
 :if ([:typeof $p] = "nil") do={ :error "MBL: internal error, URL placeholder not found in mbl-update" }
 /system script set [find where name="mbl-update"] \
   source=([:pick $src 0 $p] . $mblUrl . [:pick $src ($p + [:len $ph]) [:len $src]])
+# Inject the script version the same way.
+:set ph "@MBL_VERSION@"
+:set src [/system script get [find where name="mbl-update"] source]
+:set p [:find $src $ph]
+:if ([:typeof $p] = "nil") do={ :error "MBL: internal error, version placeholder not found in mbl-update" }
+/system script set [find where name="mbl-update"] \
+  source=([:pick $src 0 $p] . $mblScriptVersion . [:pick $src ($p + [:len $ph]) [:len $src]])
 
 # --------------------------------------------------------- 6. schedulers
 # Daily at a random time so routers do not all hit GitHub at once.
