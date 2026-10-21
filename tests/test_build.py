@@ -562,13 +562,72 @@ class CdnAllowlistTest(BuildBase):
         self.assertEqual(self._build(_fetcher6(count6=100)), 0)
         self.assertEqual({p.name for p in self.out.iterdir()}, FILES | FILES6)
 
+    def _build_err(self, fetcher, sources=None):
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            code = build(sources or self.sources, self.allow, self.out, None, now=WHEN,
+                         fetcher=fetcher, version_path=self.version)
+        return code, err.getvalue()
+
+    @staticmethod
+    def _wide_fetcher(count=9000, count6=None):
+        """count /32 entries plus 5.0.0.0/8: almost every address is in the /8."""
+        def fetch(sources):
+            results = [SourceResult(sources[0], [*_nets(count), IPv4Network("5.0.0.0/8")],
+                                    0, None)]
+            if count6 is not None:
+                results.append(SourceResult(
+                    sources[1], [*_nets6(count6), IPv6Network("2a01::/32")], 0, None))
+            return results
+        return fetch
+
+    def test_allowlist_cap_counts_entries_touched(self):
+        # 1.0.0.0/14 covers 1024 of 9001 entries (11.4 %) but only 0.006 % of the addresses
+        self.allow.write_text("1.0.0.0/14\n")
+        code, err = self._build_err(self._wide_fetcher())
+        self.assertEqual(code, 1)
+        self.assertFalse(self.out.exists())
+        self.assertIn("1024 of 9001 entries", err)
+        self.assertIn("1024 of 16786216 addresses", err)
+
+    def test_allowlist_cap_counts_partially_covered_entries(self):
+        # 5.0.0.0/24 touches the /8 entry (1 of 9001) and removes 256 of its addresses:
+        # under the cap on both measures, so the build publishes
+        self.allow.write_text("5.0.0.0/24\n")
+        code, _ = self._build_err(self._wide_fetcher())
+        self.assertEqual(code, 0)
+        cap = json.loads((self.out / "stats.json").read_text())["cdn_allowlist"]["cap"]
+        self.assertEqual(cap["ipv4"]["entries_touched"], 1)
+        self.assertEqual(cap["ipv4"]["addresses_removed"], 256)
+
+    def test_allowlist_cap_ipv6_counts_entries_touched(self):
+        self.sources.write_text(SOURCES6_TOML)
+        # 11 of the 101 IPv6 entries (10.9 %), a negligible share of the addresses
+        self.allow.write_text("".join(f"2a00:{i:x}::1\n" for i in range(1, 12)))
+        code, err = self._build_err(self._wide_fetcher(count6=100))
+        self.assertEqual(code, 0)
+        self.assertEqual({p.name for p in self.out.iterdir()}, FILES)
+        stats = json.loads((self.out / "stats.json").read_text())
+        self.assertFalse(stats["ipv6"]["published"])
+        self.assertIn("11 of 101 entries", err)
+        cap6 = stats["cdn_allowlist"]["cap"]["ipv6"]
+        self.assertEqual((cap6["entries_touched"], cap6["entries"]), (11, 101))
+        self.assertEqual(cap6["entries_pct"], 10.89)
+
     def test_stats_cdn_allowlist(self):
         info = {"cloudflare": {"source": "live", "prefixes4": 15, "prefixes6": 7},
                 "fastly": {"source": "snapshot", "prefixes4": 21, "prefixes6": 3},
                 "cloudfront": {"source": "missing", "prefixes4": 0, "prefixes6": 0}}
+        self.allow.write_text("1.0.0.0/16\n")  # 256 of the 6000 /32 entries
         self.assertEqual(self._cdn_build(_fetcher(), CdnResult([], info)), 0)
         stats = json.loads((self.out / "stats.json").read_text())
-        self.assertEqual(stats["cdn_allowlist"], info)
+        cdn_stats = dict(stats["cdn_allowlist"])
+        cap = cdn_stats.pop("cap")
+        self.assertEqual(cdn_stats, info)
+        self.assertEqual(cap["limit_pct"], 10.0)
+        self.assertEqual(cap["ipv4"], {"addresses": 6000, "addresses_removed": 256,
+                                       "addresses_pct": 4.27, "entries": 6000,
+                                       "entries_touched": 256, "entries_pct": 4.27})
 
     def test_cdn_warnings_go_to_step_summary(self):
         summary = self.tmp / "summary.md"

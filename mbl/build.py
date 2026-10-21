@@ -5,6 +5,7 @@ import re
 import sys
 import tomllib
 import urllib.request
+from bisect import bisect_right
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -87,15 +88,55 @@ def _addresses(networks) -> int:
     return sum(n.num_addresses for n in networks)
 
 
-def _allowlist_removal(nets, normalizer, allowlist) -> tuple[list, str | None]:
-    """Normalize nets with the allowlist; also return an error if it removes over 10 %."""
+def _touched(entries, allowlist, version: int) -> int:
+    """Number of entries that overlap at least one allowlist network of that version."""
+    ranges = sorted((int(n.network_address), int(n.broadcast_address))
+                    for n in allowlist if n.version == version)
+    merged: list[list[int]] = []
+    for start, end in ranges:
+        if merged and start <= merged[-1][1] + 1:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    starts = [start for start, _ in merged]
+    count = 0
+    for n in entries:
+        # the last merged range starting at or before the entry's end is the only
+        # one that can overlap it (the ranges are disjoint and sorted)
+        i = bisect_right(starts, int(n.broadcast_address)) - 1
+        if i >= 0 and merged[i][1] >= int(n.network_address):
+            count += 1
+    return count
+
+
+def _pct(part: int, whole: int) -> float:
+    return round(part * 100 / whole, 2) if whole else 0.0
+
+
+def _allowlist_removal(nets, normalizer, allowlist, version) -> tuple[list, dict, str | None]:
+    """Normalize nets with the allowlist; also measure what it takes away.
+
+    Two measures, both against the list normalized without the allowlist: the
+    addresses removed and the entries touched (overlapping an allowlist
+    network, wholly or partly). Either one over 10 % is an error.
+    """
     kept = normalizer(nets, allowlist)
-    before = _addresses(normalizer(nets, []))
-    removed = before - _addresses(kept)
-    if before and removed > before * MAX_ALLOWLIST_REMOVAL:
-        return kept, (f"allowlist removes {removed} of {before} addresses "
-                      f"({removed / before:.1%}, limit {MAX_ALLOWLIST_REMOVAL:.0%})")
-    return kept, None
+    before = normalizer(nets, [])
+    addresses = _addresses(before)
+    removed = addresses - _addresses(kept)
+    touched = _touched(before, allowlist, version)
+    measure = {"addresses": addresses, "addresses_removed": removed,
+               "addresses_pct": _pct(removed, addresses), "entries": len(before),
+               "entries_touched": touched, "entries_pct": _pct(touched, len(before))}
+    over = (removed > addresses * MAX_ALLOWLIST_REMOVAL
+            or touched > len(before) * MAX_ALLOWLIST_REMOVAL)
+    error = None
+    if over:
+        error = (f"allowlist removes {removed} of {addresses} addresses "
+                 f"({measure['addresses_pct']}%) and touches {touched} of {len(before)} "
+                 f"entries ({measure['entries_pct']}%), limit {MAX_ALLOWLIST_REMOVAL:.0%} "
+                 "on either")
+    return kept, measure, error
 
 
 def _summary(results: list[SourceResult], total: int) -> tuple[str, str]:
@@ -137,10 +178,11 @@ def build(sources_path: Path, allowlist_path: Path, out_dir: Path,
     cdn: CdnResult = (cdn_fetcher or fetch_cdn)(Path(cdn_snapshot))
     allowlist = [*allowlist, *cdn.networks]
     variants, cap_errors = {}, []
+    cap = {"limit_pct": round(MAX_ALLOWLIST_REMOVAL * 100, 2)}
     for v in VARIANTS:
         nets = [n for r in results if v in r.source.variants for n in r.networks]
         if v == "full":
-            variants[v], error = _allowlist_removal(nets, normalize, allowlist)
+            variants[v], cap["ipv4"], error = _allowlist_removal(nets, normalize, allowlist, 4)
             cap_errors += [f"{v}: {error}"] if error else []
         else:
             variants[v] = normalize(nets, allowlist)
@@ -190,7 +232,8 @@ def build(sources_path: Path, allowlist_path: Path, out_dir: Path,
         for v in VARIANTS:
             nets6 = [n for r in results if v in r.source.variants for n in r.networks]
             if v == "full":
-                variants6[v], error = _allowlist_removal(nets6, normalize6, allowlist)
+                variants6[v], cap["ipv6"], error = _allowlist_removal(
+                    nets6, normalize6, allowlist, 6)
                 errors6 += [f"ipv6 {v}: {error}"] if error else []
             else:
                 variants6[v] = normalize6(nets6, allowlist)
@@ -215,5 +258,6 @@ def build(sources_path: Path, allowlist_path: Path, out_dir: Path,
     # next build still compares against that baseline, not against today's.
     baseline6 = {v: previous[IPV6_PREFIX + v] for v in VARIANTS if IPV6_PREFIX + v in previous}
     write_outputs(Path(out_dir), variants, results, now, script_version, variants6,
-                  ipv6_baseline=baseline6, files6=files6, cdn_info=cdn.info)
+                  ipv6_baseline=baseline6, files6=files6,
+                  cdn_info={**cdn.info, "cap": cap})
     return 0

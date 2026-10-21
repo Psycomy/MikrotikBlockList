@@ -12,6 +12,7 @@ from mbl import cdn
 from mbl.__main__ import main
 
 FIXTURES = Path(__file__).parent / "fixtures"
+COMMITTED_SNAPSHOT = Path(__file__).parent.parent / "allowlist-cdn.snapshot.txt"
 URL_FILES = {
     "https://www.cloudflare.com/ips-v4": "cdn_cloudflare_v4.txt",
     "https://www.cloudflare.com/ips-v6": "cdn_cloudflare_v6.txt",
@@ -58,10 +59,12 @@ class CdnTestBase(unittest.TestCase):
         self.snapshot = self.tmp / "allowlist-cdn.snapshot.txt"
         self.snapshot.write_text(_snapshot_text())
 
-    def fetch(self, overrides=None, snapshot=None):
+    def fetch(self, overrides=None, snapshot=None, today=None):
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
-            result = cdn.fetch_cdn(snapshot or self.snapshot, _fetcher(overrides), backoff=0)
+            extra = {"today": today} if today else {}
+            result = cdn.fetch_cdn(snapshot or self.snapshot, _fetcher(overrides), backoff=0,
+                                   **extra)
         return result, err.getvalue()
 
 
@@ -163,6 +166,49 @@ class FallbackTest(CdnTestBase):
 
 
 class SnapshotTest(CdnTestBase):
+    def test_committed_snapshot_has_every_provider_and_is_valid(self):
+        text = COMMITTED_SNAPSHOT.read_text(encoding="utf-8")
+        blocks = cdn.read_snapshot(COMMITTED_SNAPSHOT)
+        self.assertEqual(set(blocks), set(cdn.PROVIDERS))
+        for name in cdn.PROVIDERS:
+            self.assertIn(f"# provider {name} ", text)
+            nets = blocks[name]
+            # read_snapshot drops an invalid block; validate again explicitly
+            cdn._validate([n for n in nets if n.version == 4], [n for n in nets if n.version == 6])
+
+    def test_read_snapshot_not_utf8_is_empty(self):
+        self.snapshot.write_bytes(b"# provider cloudflare 2026-01-01\n\xff\xfe\x00bad\n")
+        self.assertEqual(cdn.read_snapshot(self.snapshot), {})
+        down = {u: OSError("down") for u in URL_FILES}
+        result, _ = self.fetch(down)
+        self.assertEqual({i["source"] for i in result.info.values()}, {"missing"})
+
+    def test_old_snapshot_block_warns(self):
+        # the fixture snapshot is dated 2026-01-01: 91 days before 2026-04-02
+        result, err = self.fetch({"https://api.fastly.com/public-ip-list": OSError("down")},
+                                 today=date(2026, 4, 2))
+        self.assertEqual(result.info["fastly"]["source"], "snapshot")
+        self.assertTrue(any("fastly" in w and "91 days old" in w for w in result.warnings),
+                        result.warnings)
+        self.assertIn("91 days old", err)
+        self.assertFalse(any("cloudflare" in w for w in result.warnings))
+
+    def test_recent_snapshot_block_does_not_warn_about_age(self):
+        result, err = self.fetch({"https://api.fastly.com/public-ip-list": OSError("down")},
+                                 today=date(2026, 4, 1))  # exactly 90 days
+        self.assertEqual(result.info["fastly"]["source"], "snapshot")
+        self.assertEqual(len(result.warnings), 1)
+        self.assertNotIn("days old", err)
+
+    def test_undated_snapshot_block_warns(self):
+        self.snapshot.write_text(_snapshot_text().replace("# provider fastly 2026-01-01",
+                                                          "# provider fastly"))
+        result, _ = self.fetch({"https://api.fastly.com/public-ip-list": OSError("down")},
+                               today=date(2026, 1, 2))
+        self.assertEqual(result.info["fastly"]["source"], "snapshot")
+        self.assertTrue(any("fastly" in w and "unknown age" in w for w in result.warnings),
+                        result.warnings)
+
     def test_write_snapshot_roundtrip(self):
         live, _ = self.fetch()
         blocks = cdn.fetch_live(_fetcher())

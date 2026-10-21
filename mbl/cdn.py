@@ -4,7 +4,7 @@ import re
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, timezone
 from functools import partial
 from ipaddress import IPv4Network, IPv6Network, ip_network
 from pathlib import Path
@@ -18,6 +18,7 @@ MIN_PREFIXES6 = 1
 MIN_PREFIXLEN4 = 8   # a wider IPv4 prefix is rejected
 MIN_PREFIXLEN6 = 16  # a wider IPv6 prefix is rejected
 DEFAULT_SNAPSHOT = Path("allowlist-cdn.snapshot.txt")
+MAX_SNAPSHOT_AGE_DAYS = 90  # an older snapshot block is still used, with a warning
 
 
 def _lines(text: str) -> tuple[list[str], list[str]]:
@@ -87,10 +88,14 @@ def _live(provider: Provider, fetcher: Callable[[str], str]) -> list[Network]:
     return _checked(*provider.extract(texts))
 
 
+def _default_fetcher(backoff: float) -> Callable[[str], str]:
+    return partial(_download, timeout=30, retries=2, backoff=backoff)
+
+
 def fetch_live(fetcher: Callable[[str], str] | None = None,
                backoff: float = 2) -> dict[str, list[Network]]:
     """Download every provider; raise ValueError naming the first one that is rejected."""
-    fetcher = fetcher or partial(_download, timeout=30, retries=2, backoff=backoff)
+    fetcher = fetcher or _default_fetcher(backoff)
     blocks = {}
     for name, provider in PROVIDERS.items():
         try:
@@ -100,20 +105,25 @@ def fetch_live(fetcher: Callable[[str], str] | None = None,
     return blocks
 
 
-def read_snapshot(path: Path) -> dict[str, list[Network]]:
-    """Provider blocks of the snapshot; an unreadable file or invalid block is left out."""
+def _read_snapshot(path: Path) -> tuple[dict[str, list[Network]], dict[str, date | None]]:
+    """Valid provider blocks of the snapshot and the date in each block header (None if none)."""
     try:
         text = Path(path).read_text(encoding="utf-8")
-    except OSError:
-        return {}
+    except (OSError, UnicodeDecodeError):
+        return {}, {}
     raw: dict[str, list[str]] = {}
+    dates: dict[str, date | None] = {}
     current = None
     for line in text.splitlines():
         line = line.strip()
-        header = re.fullmatch(r"#\s*provider\s+(\S+)(?:\s+\S+)?", line)
+        header = re.fullmatch(r"#\s*provider\s+(\S+)(?:\s+(\S+))?", line)
         if header:
             current = header.group(1)
             raw[current] = []
+            try:
+                dates[current] = date.fromisoformat(header.group(2) or "")
+            except ValueError:
+                dates[current] = None
         elif line and not line.startswith("#") and current:
             raw[current].append(line)
     blocks = {}
@@ -124,7 +134,12 @@ def read_snapshot(path: Path) -> dict[str, list[Network]]:
             blocks[name] = _checked(*_lines("\n".join(entries)))
         except ValueError:
             continue
-    return blocks
+    return blocks, {name: dates[name] for name in blocks}
+
+
+def read_snapshot(path: Path) -> dict[str, list[Network]]:
+    """Provider blocks of the snapshot; an unreadable file or invalid block is left out."""
+    return _read_snapshot(path)[0]
 
 
 def write_snapshot(path: Path, blocks: dict[str, list[Network]], day: date) -> None:
@@ -143,14 +158,29 @@ def _info(source: str, nets: list[Network]) -> dict:
             "prefixes6": sum(n.version == 6 for n in nets)}
 
 
+def _age_note(day: date | None, today: date) -> str:
+    """'' for a block at most MAX_SNAPSHOT_AGE_DAYS old, else a note for the warning."""
+    if day is None:
+        return "; the snapshot block is of unknown age (no date in its header)"
+    age = (today - day).days
+    if age > MAX_SNAPSHOT_AGE_DAYS:
+        return (f"; the snapshot block is {age} days old ({day.isoformat()}), "
+                "refresh it with: python3 -m mbl cdn-snapshot")
+    return ""
+
+
 def fetch_cdn(snapshot_path: Path = DEFAULT_SNAPSHOT,
-              fetcher: Callable[[str], str] | None = None, backoff: float = 2) -> CdnResult:
+              fetcher: Callable[[str], str] | None = None, backoff: float = 2,
+              today: date | None = None) -> CdnResult:
     """Live lists per provider; a rejected provider falls back to its snapshot block.
 
     Never raises: a provider with neither is left out and reported as missing.
+    A snapshot block older than MAX_SNAPSHOT_AGE_DAYS (by its header date,
+    against today, default the current UTC date) is used with a louder warning.
     """
-    fetcher = fetcher or partial(_download, timeout=30, retries=2, backoff=backoff)
-    snapshot = None
+    fetcher = fetcher or _default_fetcher(backoff)
+    today = today or datetime.now(timezone.utc).date()
+    snapshot = dates = None
     result = CdnResult()
     for name, provider in PROVIDERS.items():
         try:
@@ -158,10 +188,11 @@ def fetch_cdn(snapshot_path: Path = DEFAULT_SNAPSHOT,
         except Exception as exc:
             problem = f"{type(exc).__name__}: {exc}"
             if snapshot is None:
-                snapshot = read_snapshot(snapshot_path)
+                snapshot, dates = _read_snapshot(snapshot_path)
             if name in snapshot:
                 nets, source = snapshot[name], "snapshot"
-                warning = f"CDN allowlist {name}: live list rejected ({problem}); using snapshot"
+                warning = (f"CDN allowlist {name}: live list rejected ({problem}); using snapshot"
+                           + _age_note(dates[name], today))
             else:
                 nets, source = [], "missing"
                 warning = (f"CDN allowlist {name}: live list rejected ({problem}) and no "
