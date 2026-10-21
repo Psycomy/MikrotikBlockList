@@ -32,7 +32,7 @@ import time
 import unittest
 from contextlib import suppress
 from datetime import datetime, timezone
-from ipaddress import IPv4Address, IPv4Network
+from ipaddress import IPv4Address, IPv4Network, IPv6Network
 from pathlib import Path
 
 from mbl.render import write_outputs
@@ -49,6 +49,10 @@ TEST_CA_CN = "MBL Test CA"
 # 10,000 entries from 45.0.0.0 are ~113 KB (5,000 would be ~55 KB).
 LIST_SIZE = 10000
 MIN_ENTRIES = 1000
+# IPv6 lists (served, loaded only with :global mblIpv6 true): global /48s
+# under 2a0e::/16 that pass the generator's normalize6.
+LIST6_SIZE = 300
+LITE6_SIZE = 60
 # Lines that must never run on the router: they are only data, counted as invalid.
 # 12 lines, under the 1 % budget (100 with LIST_SIZE entries).
 MALICIOUS = [
@@ -97,12 +101,17 @@ SCRIPT_VARIANTS = {
 
 
 def _synthetic_list(out_dir: Path) -> None:
-    """LIST_SIZE global /32s from 45.0.0.0 (full) and 2,000 from 46.0.0.0 (lite); no real sources."""
+    """LIST_SIZE global /32s from 45.0.0.0 (full) and 2,000 from 46.0.0.0 (lite), plus
+    LIST6_SIZE /48s from 2a0e:b000:: (full) and LITE6_SIZE from 2a0e:c000:: (lite);
+    no real sources."""
     first = int(IPv4Address("45.0.0.0"))
     networks = [IPv4Network(IPv4Address(first + i)) for i in range(LIST_SIZE)]
     lite_first = int(IPv4Address("46.0.0.0"))
     lite = [IPv4Network(IPv4Address(lite_first + i)) for i in range(2000)]
-    write_outputs(out_dir, {"full": networks, "lite": lite}, [], datetime.now(timezone.utc))
+    networks6 = [IPv6Network(f"2a0e:{0xb000 + i:x}::/48") for i in range(LIST6_SIZE)]
+    lite6 = [IPv6Network(f"2a0e:{0xc000 + i:x}::/48") for i in range(LITE6_SIZE)]
+    write_outputs(out_dir, {"full": networks, "lite": lite}, [], datetime.now(timezone.utc),
+                  variants6={"full": networks6, "lite": lite6})
 
 
 def _local_ip_towards(host: str) -> str:
@@ -139,6 +148,11 @@ class RouterOsTest(unittest.TestCase):
         _synthetic_list(served)
         lines = (served / "routeros-full.txt").read_text().splitlines(keepends=True)
         assert lines[-1] == f"# MBL-END entries={LIST_SIZE}\n", lines[-1]
+        for name, size, var in (("routeros6-full.txt", LIST6_SIZE, "full"),
+                                ("routeros6-lite.txt", LITE6_SIZE, "lite")):
+            lines6 = (served / name).read_text().splitlines()
+            assert f"variant={var} family=ipv6 " in lines6[0], lines6[0]
+            assert lines6[-1] == f"# MBL-END entries={size}", lines6[-1]
         (served / "routeros-full-truncated.txt").write_text("".join(lines[:-1]))
         header, body, footer = lines[0], [ln.rstrip("\n") for ln in lines[1:-1]], lines[-1]
         assert len(body) == LIST_SIZE
@@ -343,7 +357,7 @@ class RouterOsTest(unittest.TestCase):
         # every line is loaded, including those cut between two /file read chunks
         self.assertEqual(self.count(self.active_list()), LIST_SIZE)
         log = self.log()
-        self.assertIn(f"MBL: installed (script {self.installed_version}, variant full)", log)
+        self.assertIn(f"MBL: installed (script {self.installed_version}, variant full, ipv6 no)", log)
         warning = f"MBL: using test URL base {self.base}"
         self.assertTrue(any(warning in ln and "warning" in ln.split(" ", 1)[0]
                             for ln in log.splitlines()), log)
@@ -648,7 +662,7 @@ class RouterOsTest(unittest.TestCase):
         out = self.install_variant("lite")
         self.assertIn("/routeros-lite.txt", self.server.requests)
         self.assertEqual(self.count(self.active_list()), 2000)
-        self.assertIn(f"MBL: installed (script {self.installed_version}, variant lite)",
+        self.assertIn(f"MBL: installed (script {self.installed_version}, variant lite, ipv6 no)",
                       self.log_after(token))
         self.assertIn("variant lite", out)
         self.assertIn("routeros-lite.txt", self.update_source())
