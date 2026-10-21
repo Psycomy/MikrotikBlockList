@@ -18,7 +18,7 @@ MBL_E2E_ARTIFACTS=<dir> receives console.log and qemu.log (written there while
 the VM runs, so they survive a killed run) and router-log.txt (the router's
 /log print, when the run ends), for CI failure artifacts.
 
-The cases share one router and run in order (test_01 ... test_09).
+The cases share one router and run in order (test_01 ... test_15).
 """
 from __future__ import annotations
 
@@ -48,6 +48,19 @@ TEST_CA_CN = "MBL Test CA"
 # 10,000 entries from 45.0.0.0 are ~113 KB (5,000 would be ~55 KB).
 LIST_SIZE = 10000
 MIN_ENTRIES = 1000
+# Lines that must never run on the router: they are only data, counted as invalid.
+MALICIOUS = [
+    "/ip firewall address-list add list=mbl-pwned address=1.1.1.1",
+    "1.2.3.4; /ip firewall address-list add list=mbl-pwned address=1.1.1.2",
+    "$([/ip firewall address-list add list=mbl-pwned address=1.1.1.3])",
+    "[/ip firewall address-list add list=mbl-pwned address=1.1.1.4]",
+    ':execute "/ip firewall address-list add list=mbl-pwned address=1.1.1.5"',
+    "999.1.1.1",
+    "1.2.3.0/40",
+    "1.2.3.0/4",
+    "abc",
+    "",
+]
 
 
 def _synthetic_list(out_dir: Path) -> None:
@@ -92,6 +105,23 @@ class RouterOsTest(unittest.TestCase):
         lines = (served / "routeros-full.txt").read_text().splitlines(keepends=True)
         assert lines[-1] == f"# MBL-END entries={LIST_SIZE}\n", lines[-1]
         (served / "routeros-full-truncated.txt").write_text("".join(lines[:-1]))
+        header, body, footer = lines[0], [ln.rstrip("\n") for ln in lines[1:-1]], lines[-1]
+        assert len(body) == LIST_SIZE
+        nl = "\n"
+
+        def variant(name: str, head: str, entries: list[str], foot: str, eol: str = nl) -> None:
+            text = eol.join([head.rstrip("\n"), *entries, foot.rstrip("\n")]) + eol
+            (served / name).write_bytes(text.encode())
+
+        variant("routeros-full-injected.txt", header, body + MALICIOUS, footer)
+        wrong = LIST_SIZE + 100
+        variant("routeros-full-mismatch.txt",
+                header.replace(f"entries={LIST_SIZE}", f"entries={wrong}"), body,
+                footer.replace(f"entries={LIST_SIZE}", f"entries={wrong}"))
+        variant("routeros-full-crlf.txt", header,
+                [ln + (" " if i < 10 else "") for i, ln in enumerate(body)], footer, "\r\n")
+        variant("routeros-full-invalid.txt", header,
+                body + [f"bad-line-{i}" for i in range(LIST_SIZE // 50)], footer)
 
         if ssh:
             key = os.environ.get("MBL_E2E_KEY")
@@ -243,6 +273,13 @@ class RouterOsTest(unittest.TestCase):
                   if "error" in ln.split(" ", 1)[0] and "MBL:" in ln]
         self.assertTrue(any(error in ln for ln in errors), log)
 
+    def serve_variant(self, name: str) -> None:
+        self.set_update_path("/routeros-full.txt", f"/{name}")
+
+    def restore_path(self, name: str) -> None:
+        self.set_update_path(f"/{name}", "/routeros-full.txt")
+        self.assertIn(f"{self.base}/routeros-full.txt", self.update_source())
+
     # -- cases --------------------------------------------------------------
 
     def test_01_clean_install(self):
@@ -372,6 +409,81 @@ class RouterOsTest(unittest.TestCase):
                 self.uninstall()
             finally:
                 self.chr.run(dns)
+
+    def test_10_upgrade_from_v2(self):
+        v2 = subprocess.run(["git", "show", "v2.0.0:routeros/install.rsc"], cwd=REPO,
+                            capture_output=True, check=True).stdout
+        self.uninstall()
+        with tempfile.TemporaryDirectory(prefix="mbl-v2-") as d:
+            f = Path(d) / "install.rsc"
+            f.write_bytes(v2)
+            self.chr.upload(f, "install.rsc")
+        self.chr.run(f':global mblUrlBase "{self.base}"; /import install.rsc', timeout=600)
+        self.assertEqual(self.num("/file", 'name="mbl-last.rsc"'), 1, self.chr.run("/file print"))
+        before = self.count(self.active_list())
+        self.assertGreaterEqual(before, MIN_ENTRIES)
+        token = self.mark()
+        self.install(self.base)
+        # protection never lapsed: the rule points at a populated list right after
+        # the v3 install (which already loads the first v3 list)
+        self.assertGreaterEqual(self.count(self.active_list()), MIN_ENTRIES)
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
+        log = self.log_after(token)
+        self.assertIn("MBL: removed v2 files", log)
+        self.assertEqual(self.num("/file", 'name~"^mbl-.*\\\\.rsc"'), 0, self.chr.run("/file print"))
+        self.assertEqual(self.num("/file", 'name="mbl-last.txt"'), 1, self.chr.run("/file print"))
+        self.assertEqual(self.count(self.active_list()), LIST_SIZE)
+
+    def test_11_injected_lines_never_run(self):
+        name = "routeros-full-injected.txt"
+        self.serve_variant(name)
+        try:
+            old = self.active_list()
+            token = self.mark()
+            self.update()
+            self.assertNotEqual(self.active_list(), old)
+            self.assertEqual(self.count(self.active_list()), LIST_SIZE)
+            self.assertEqual(self.count("mbl-pwned"), 0)
+            self.assertIn("MBL: loaded", self.log_after(token))
+        finally:
+            self.restore_path(name)
+
+    def test_12_count_mismatch_rejected(self):
+        name = "routeros-full-mismatch.txt"
+        self.serve_variant(name)
+        try:
+            self.assert_failed_update_keeps_active(
+                f"/{name}", "MBL: mbl-new.txt rejected (count mismatch)")
+        finally:
+            self.restore_path(name)
+
+    def test_13_crlf_accepted(self):
+        name = "routeros-full-crlf.txt"
+        self.serve_variant(name)
+        try:
+            old = self.active_list()
+            token = self.mark()
+            self.update()
+            self.assertNotEqual(self.active_list(), old)
+            self.assertEqual(self.count(self.active_list()), LIST_SIZE)
+            self.assertIn(f"MBL: loaded {LIST_SIZE} entries", self.log_after(token))
+        finally:
+            self.restore_path(name)
+
+    def test_14_too_many_invalid_rejected(self):
+        name = "routeros-full-invalid.txt"
+        self.serve_variant(name)
+        try:
+            self.assert_failed_update_keeps_active(
+                f"/{name}", "MBL: mbl-new.txt rejected (too many invalid lines")
+        finally:
+            self.restore_path(name)
+
+    def test_15_final_uninstall(self):
+        self.uninstall()
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 0)
+        self.assertEqual(self.num("/system script", 'name~"^mbl-"'), 0)
+        self.assertEqual(self.count("mbl-a") + self.count("mbl-b"), 0)
 
 
 if __name__ == "__main__":
