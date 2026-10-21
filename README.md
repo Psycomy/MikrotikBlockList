@@ -225,6 +225,9 @@ The [`lists`](https://github.com/Psycomy/MikrotikBlockList/tree/lists) branch co
 4. The load is rejected, and the active list kept, if the header is missing or wrong, the footer
    (`# MBL-END entries=N`) is missing, the header and footer counts differ, the added count differs
    from `entries`, more than 1 % of the lines are invalid, or fewer than 1,000 entries were added.
+   The log line `MBL: <file> rejected (<reason>), active list kept` names the reason: `no header`,
+   `bad header`, `no footer`, `header/footer mismatch`, `count mismatch`, `too many invalid lines
+   (N)`, `too few entries (N)` or `read error`.
 5. Only then are the three drop rules switched to the new list, and the old one is emptied. You are
    protected the whole time; the two lists coexist only while the update runs.
 6. The new file is kept as `mbl-last.txt`. On devices with a `flash/` directory the download and
@@ -330,7 +333,9 @@ integrado (`builtin-trust-store`). Se puede volver a ejecutar sin duplicar nada.
 de 32 KiB y valida cada línea (IPv4 o CIDR con prefijo de 8 a 32); solo añade direcciones. Nunca
 importa ni ejecuta el contenido del fichero. Si falta la cabecera o el pie, no coinciden los
 conteos, hay más de un 1 % de líneas inválidas o quedan menos de 1000 entradas, se rechaza la
-carga y se conserva la lista activa. Medido en un CHR 7.24.5 (1 vCPU, 256 MiB): 40.000 entradas
+carga y se conserva la lista activa. El log indica el motivo en `MBL: <fichero> rejected (<motivo>),
+active list kept`: `no header`, `bad header`, `no footer`, `header/footer mismatch`,
+`count mismatch`, `too many invalid lines (N)`, `too few entries (N)` o `read error`. Medido en un CHR 7.24.5 (1 vCPU, 256 MiB): 40.000 entradas
 en unos 25 s.
 
 **Ficheros publicados:** `routeros-full.txt` (formato del router, con cabecera y pie),
