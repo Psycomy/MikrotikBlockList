@@ -121,7 +121,7 @@ def build(sources_path: Path, allowlist_path: Path, out_dir: Path,
         explained = sum(previous_entries.get(name, 0) for name in optional)
         prev = previous.get(v)
         drop = prev - len(nets) if prev else 0
-        if optional and drop > prev * MAX_DROP and drop <= explained:
+        if prev and optional and drop > prev * MAX_DROP and drop <= explained:
             print(f"warning: {v}: drop of {drop} explained by failed sources "
                   f"({', '.join(optional)}), drop check skipped", file=sys.stderr)
         errors += [f"{v}: {e}" for e in safety_errors(

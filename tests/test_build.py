@@ -200,6 +200,16 @@ variants = ["lite", "full"]
         self.assertIn("lite: drop of 3000 explained by failed sources (lite-b), "
                       "drop check skipped", err)
 
+    def test_failed_optional_source_without_previous_lite_total(self):
+        code, err = self._lite_drop(({"full": 10500}, {"lite-a": 1500, "lite-b": 3000}))
+        self.assertEqual(code, 0, err)
+        self.assertTrue((self.out / "blocklist-lite.txt").exists())
+
+    def test_failed_optional_source_without_previous_stats(self):
+        code, err = self._lite_drop(({}, {}))
+        self.assertEqual(code, 0, err)
+        self.assertTrue((self.out / "blocklist-lite.txt").exists())
+
     def test_drop_larger_than_explained_refuses(self):
         code, err = self._lite_drop(({"full": 10500, "lite": 4500},
                                      {"lite-a": 1500, "lite-b": 2999}))
