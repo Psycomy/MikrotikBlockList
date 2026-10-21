@@ -70,6 +70,8 @@ Dile a Claude la **IP del CHR** (la de ether1, alcanzable desde este equipo) y c
 
 ## 3. Casos de prueba
 
+> Las secciones 3 a 6 (casos 1-13, `mbl-last.rsc`, `/import`) son el registro histórico de la v2 (2026-10-19). Lo de la v3 está en la sección 7.
+
 Rellena *Estado* con OK / FALLO.
 
 **Resultado del 2026-10-19:**
@@ -238,7 +240,7 @@ Los casos comparten un router y corren en orden.
 | `test_11_injected_lines_never_run` | Un fichero con `/system ...`, `1.2.3.4; /ip ...`, `$(...)`, `[...]`, `:execute`, octetos o prefijos fuera de rango y una línea de 100 KB: nada se ejecuta (el marcador `mbl-pwned` no aparece) y las líneas cuentan como inválidas |
 | `test_12_count_mismatch_rejected` | Cabecera y pie coherentes entre sí pero con más entradas de las que hay (fichero cortado con el pie añadido a mano): rechazado con `count mismatch`, lista activa intacta |
 | `test_13_crlf_accepted` | Fichero con `\r\n` y espacios al final: las líneas se aceptan y se cargan todas |
-| `test_14_too_many_invalid_rejected` | Más de un 1 % de líneas inválidas (más de 200 con 10000 entradas): rechazado con `too many invalid lines`, lista activa intacta |
+| `test_14_too_many_invalid_rejected` | Más de un 1 % de líneas inválidas (más de 100 con 10000 entradas; el test añade 200): rechazado con `too many invalid lines`, lista activa intacta |
 | `test_15_final_uninstall` | Siempre el último: deja el router limpio |
 
 ### Rendimiento de la v3 (2026-10-21)

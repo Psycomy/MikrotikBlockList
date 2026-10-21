@@ -63,10 +63,10 @@ flowchart LR
 - Interface lists named **`WAN`** (your Internet interface) and **`LAN`** (your local interfaces).
   The default home configuration already has them; the installer stops without changing anything
   if they are missing.
-- **RAM:** today's list (~39k entries) takes about **7–12 MiB**, and during an update the old and
-  the new lists coexist for about 25 seconds, so plan for twice that. Measured on a 256 MiB CHR:
-  36.7 MiB free with one list loaded, never below 30.5 MiB while both coexist. Tight devices
-  should keep an eye on `/system resource print`.
+- **RAM:** measured on a 256 MiB CHR (RouterOS 7.24.5) with a 40k-entry list: about
+  **36.7 MiB free** with one list loaded, and never below **30.5 MiB** while the old and the new
+  lists coexist during an update (about 25 seconds). Tight devices should keep an eye on
+  `/system resource print`.
 
 ## Install
 
@@ -76,7 +76,7 @@ Paste this into the RouterOS terminal (Winbox, WebFig or SSH):
 /tool fetch url="https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/main/routeros/install.rsc" check-certificate=yes; /import install.rsc
 ```
 
-It prints `MBL: installed` when the first list is loaded (about 10 seconds). The installer is
+It prints `MBL: installed` when the first list is loaded (about 20 seconds). The installer is
 idempotent: run it again at any time to upgrade or repair; nothing is duplicated and your
 allowlist is kept.
 
@@ -257,8 +257,8 @@ a false positive in a feed, report it to that feed.
 
 **How do I force an update now?** `/system script run mbl-update`, then check `/log print where message~"MBL"`.
 
-**My device has little RAM.** Each list of ~39k entries uses about 7–12 MiB and an update needs
-two for about 25 seconds. Check free memory with `/system resource print` before installing.
+**My device has little RAM.** On a 256 MiB CHR with a 40k-entry list, free RAM was about 36.7 MiB
+with one list and never below 30.5 MiB during an update (two lists for about 25 seconds). Check free memory with `/system resource print` before installing.
 
 **Why the raw table and not the filter table?** Raw rules run before connection tracking, so
 dropped packets cost almost nothing and never create conntrack entries.
@@ -311,9 +311,8 @@ ver [`docs/source-study-2026-10-20.md`](docs/source-study-2026-10-20.md). La all
 repositorio excluye siempre el rango de descarga de GitHub, los DNS públicos y los rangos de Cloudflare.
 
 **Requisitos:** RouterOS **7.21 o superior** (probado en CHR 7.24.5), listas de interfaces **`WAN`**
-y **`LAN`**, y algo de RAM libre: unos 7–12 MiB por lista (~39k entradas), el doble durante unos
-25 segundos en cada actualización (medido en un CHR de 256 MiB: 36,7 MiB libres con una lista y
-nunca menos de 30,5 MiB mientras conviven las dos).
+y **`LAN`**, y algo de RAM libre: medido en un CHR de 256 MiB con una lista de 40k entradas, unos 36,7 MiB
+libres con una lista y nunca menos de 30,5 MiB durante una actualización (dos listas unos 25 segundos).
 
 ### Instalación
 
