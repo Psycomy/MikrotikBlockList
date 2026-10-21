@@ -479,7 +479,9 @@ class Chr:
         except subprocess.TimeoutExpired as e:
             raise ChrError(f"timeout after {timeout} s running {cmd!r}") from e
         if r.returncode != 0:
-            raise ChrError(f"{cmd!r} failed ({r.returncode}): {r.stderr.strip()}")
+            # RouterOS prints a script error (e.g. an installer :error) on stdout
+            detail = r.stderr.strip() or r.stdout.strip()[-2000:]
+            raise ChrError(f"{cmd!r} failed ({r.returncode}): {detail}")
         return r.stdout.replace("\r", "")
 
     def upload(self, local: Path, name: str) -> None:
