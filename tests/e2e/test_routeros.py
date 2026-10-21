@@ -67,6 +67,18 @@ MALICIOUS = [
 ]
 
 
+# Served lists that differ from the good one only in the header's script= value.
+SCRIPT_VARIANTS = {
+    "routeros-full-script-newer.txt": "9.0.0",
+    "routeros-full-script-same.txt": (REPO / "VERSION").read_text().strip(),
+    "routeros-full-script-older.txt": "3.0.5",
+    "routeros-full-script-3-10.txt": "3.10.0",
+    "routeros-full-script-inject.txt": "3.1.0;/system/reboot",
+    "routeros-full-script-abc.txt": "abc",
+    "routeros-full-script-empty.txt": "",
+}
+
+
 def _synthetic_list(out_dir: Path) -> None:
     """LIST_SIZE consecutive global /32s from 45.0.0.0; no real sources."""
     first = int(IPv4Address("45.0.0.0"))
@@ -126,6 +138,11 @@ class RouterOsTest(unittest.TestCase):
                 [ln + (" " if i < 10 else "") for i, ln in enumerate(body)], footer, "\r\n")
         variant("routeros-full-invalid.txt", header,
                 body + [f"bad-line-{i}" for i in range(LIST_SIZE // 50)], footer)
+        cls.installed_version = (REPO / "VERSION").read_text().strip()
+        assert re.search(r" script=\S*$", header.rstrip("\n")), header
+        for name, published in SCRIPT_VARIANTS.items():
+            variant(name, re.sub(r"script=\S*$", f"script={published}", header.rstrip("\n")),
+                    body, footer)
 
         if ssh:
             key = os.environ.get("MBL_E2E_KEY")
@@ -533,6 +550,60 @@ class RouterOsTest(unittest.TestCase):
                 f"/{name}", "MBL: mbl-new.txt rejected (too many invalid lines")
         finally:
             self.restore_path(name)
+
+    def script_notices(self, name: str) -> tuple[str, list[str]]:
+        """Serve `name`, run mbl-update, assert the load worked; return (log, notice lines)."""
+        self.serve_variant(name)
+        try:
+            old = self.active_list()
+            token = self.mark()
+            self.server.requests.clear()
+            self.update()
+            self.assertIn(f"/{name}", self.server.requests)
+            self.assertNotEqual(self.active_list(), old)
+            self.assertEqual(self.count(self.active_list()), LIST_SIZE)
+            log = self.log_after(token)
+            self.assertIn(f"MBL: loaded {LIST_SIZE} entries", log)
+            return log, [ln for ln in log.splitlines() if "MBL: script" in ln]
+        finally:
+            self.restore_path(name)
+
+    def test_14b_newer_script_notice(self):
+        _, notices = self.script_notices("routeros-full-script-newer.txt")
+        self.assertEqual(len(notices), 1, notices)
+        topics, _, msg = notices[0].partition(" ")
+        self.assertIn("warning", topics)
+        self.assertIn(
+            f"MBL: script 9.0.0 available (installed {self.installed_version}) - reinstall: "
+            '/tool fetch url="https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/'
+            'main/routeros/install.rsc"', msg)
+
+    def test_14c_no_notice_when_not_newer(self):
+        for name in ("routeros-full-script-same.txt", "routeros-full-script-older.txt"):
+            with self.subTest(name):
+                _, notices = self.script_notices(name)
+                self.assertEqual(notices, [])
+
+    def test_14d_bad_script_version_ignored(self):
+        self.chr.run(':global mblE2eAlive "yes"')
+        try:
+            for name in ("routeros-full-script-inject.txt", "routeros-full-script-abc.txt",
+                         "routeros-full-script-empty.txt"):
+                with self.subTest(name):
+                    _, notices = self.script_notices(name)
+                    self.assertEqual(notices, [])
+                    # a global variable is lost on reboot: proves `/system reboot` did not run
+                    self.assertEqual(
+                        self.chr.run(":global mblE2eAlive; :put $mblE2eAlive").strip(), "yes")
+        finally:
+            with suppress(ChrError, OSError):
+                self.chr.run('/system script environment remove [find where name="mblE2eAlive"]')
+
+    def test_14e_numeric_comparison(self):
+        # 3.10.0 > 3.1.0 numerically (a string comparison would say the opposite)
+        _, notices = self.script_notices("routeros-full-script-3-10.txt")
+        self.assertEqual(len(notices), 1, notices)
+        self.assertIn("MBL: script 3.10.0 available", notices[0])
 
     def test_15_final_uninstall(self):
         self.uninstall()

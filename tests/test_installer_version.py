@@ -33,6 +33,9 @@ class InstallerVersionTest(unittest.TestCase):
         body = _update_body(INSTALLER.read_text())
         self.assertEqual(body.count("@MBL_VERSION@"), 1)
 
+    def test_installer_injects_version_placeholder(self):
+        self.assertIn(':set ph "@MBL_VERSION@"', INSTALLER.read_text())
+
 
 if __name__ == "__main__":
     unittest.main()
