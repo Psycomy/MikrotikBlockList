@@ -9,20 +9,22 @@ address as seen from that router.
 Existing-host mode is DESTRUCTIVE: it reinstalls MBL, reboots the router and
 finally runs uninstall.rsc, so any previous MBL installation there is gone.
 It therefore also requires MBL_E2E_DESTRUCTIVE=1; without it the class is
-skipped. A best-effort uninstall also runs if a case aborts early.
+skipped. A best-effort uninstall also runs if a case aborts early or the run
+is interrupted (atexit); after a run killed outright, run uninstall.rsc by hand.
 
 Other environment variables: MBL_E2E_CHR_VERSION / MBL_E2E_CHR_SHA256 override the
 pinned tests/e2e/chr-version.txt (an empty SHA256 skips the checksum), and
-MBL_E2E_ARTIFACTS=<dir> receives console.log, qemu.log and router-log.txt (the
-router's /log print) when the run ends, for CI failure artifacts.
+MBL_E2E_ARTIFACTS=<dir> receives console.log and qemu.log (written there while
+the VM runs, so they survive a killed run) and router-log.txt (the router's
+/log print, when the run ends), for CI failure artifacts.
 
 The cases share one router and run in order (test_01 ... test_09).
 """
 from __future__ import annotations
 
+import atexit
 import os
 import re
-import shutil
 import subprocess
 import tempfile
 import time
@@ -37,7 +39,10 @@ from tests.e2e.harness import Chr, ChrError, TlsServer, ensure_image
 
 REPO = Path(__file__).resolve().parents[2]
 ROUTEROS = REPO / "routeros"
-DEFAULT_URL = "https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/lists/blocklist.rsc"
+DEFAULT_HOST = "raw.githubusercontent.com"
+DEFAULT_URL = f"https://{DEFAULT_HOST}/Psycomy/MikrotikBlockList/lists/blocklist.rsc"
+UNREACHABLE = "192.0.2.1"  # TEST-NET-1 (RFC 5737)
+DNS_COMMENT = "MBLTEST"
 TEST_CA_CN = "MBL Test CA"
 LIST_SIZE = 5000
 MIN_ENTRIES = 1000
@@ -78,10 +83,7 @@ class RouterOsTest(unittest.TestCase):
             )
         tmp = tempfile.TemporaryDirectory(prefix="mbl-e2e-")
         cls.addClassCleanup(tmp.cleanup)
-        # Registered before booting so boot failures still keep the VM logs
-        # (LIFO: runs before tmp.cleanup).
         tmpdir = Path(tmp.name)
-        cls.addClassCleanup(cls._save_vm_logs, tmpdir / "vm")
 
         served = tmpdir / "served"
         _synthetic_list(served)
@@ -112,7 +114,7 @@ class RouterOsTest(unittest.TestCase):
             cache = Path(os.environ.get("MBL_E2E_CACHE")
                          or Path(tempfile.gettempdir()) / "mbl-e2e-cache")
             image = ensure_image(version, sha256, cache)
-            cls.chr = Chr.boot(image, tmpdir / "vm")
+            cls.chr = Chr.boot(image, tmpdir / "vm", log_dir=cls._artifacts())
             cls.addClassCleanup(cls.chr.stop)
         cls.addClassCleanup(cls._save_router_log)
 
@@ -124,11 +126,17 @@ class RouterOsTest(unittest.TestCase):
         if ssh:
             # Never leave the user's router half-installed or pointing at the
             # (gone) test server if a case aborts early. Runs before the CA
-            # removal and the server stop (cleanups are LIFO).
+            # removal and the server stop (cleanups are LIFO); atexit covers
+            # an interrupted run (Ctrl-C) that skips the class cleanups.
+            cls._uninstalled = False
             cls.addClassCleanup(cls._best_effort_uninstall)
+            atexit.register(cls._best_effort_uninstall)
 
     @classmethod
     def _best_effort_uninstall(cls):
+        if cls._uninstalled:
+            return
+        cls._uninstalled = True
         with suppress(ChrError, OSError):
             cls.chr.upload(ROUTEROS / "uninstall.rsc", "uninstall.rsc")
             cls.chr.run("/import uninstall.rsc", timeout=300)
@@ -149,15 +157,6 @@ class RouterOsTest(unittest.TestCase):
         if out is not None:
             with suppress(ChrError, OSError):
                 (out / "router-log.txt").write_text(cls.chr.run("/log print", timeout=60))
-
-    @classmethod
-    def _save_vm_logs(cls, vm_dir: Path):
-        """Runs after the VM stopped: keep its serial console and QEMU logs."""
-        out = cls._artifacts()
-        if out is not None:
-            for name in ("console.log", "qemu.log"):
-                with suppress(OSError):
-                    shutil.copyfile(vm_dir / name, out / name)
 
     @classmethod
     def _remove_test_ca(cls):
@@ -250,7 +249,12 @@ class RouterOsTest(unittest.TestCase):
         for name in ("mbl-daily", "mbl-boot"):
             self.assertEqual(self.num("/system scheduler", f'name="{name}"'), 1, name)
         self.assertGreaterEqual(self.count(self.active_list()), MIN_ENTRIES)
-        self.assertIn("MBL: installed", self.log())
+        log = self.log()
+        self.assertIn("MBL: installed", log)
+        warning = f"MBL: using test URL base {self.base}"
+        self.assertTrue(any(warning in ln and "warning" in ln.split(" ", 1)[0]
+                            for ln in log.splitlines()), log)
+        self.assertIn(warning, out)
 
     def test_02_update_alternates(self):
         old = self.active_list()
@@ -349,12 +353,22 @@ class RouterOsTest(unittest.TestCase):
         self.assertEqual(self.num("/interface list member", members), n_members)
 
     def test_09_default_url_without_override(self):
+        # No internet needed: the default host resolves to an unreachable
+        # address, so the first load fails (fetch timeout, ~10 s) and only
+        # the URL is checked.
+        dns = f'/ip dns static remove [find where comment="{DNS_COMMENT}"]'
         try:
+            self.chr.run(f'/ip dns static add name={DEFAULT_HOST} '
+                         f'address={UNREACHABLE} comment="{DNS_COMMENT}"')
+            self.chr.run("/ip dns cache flush")
             self.chr.run(':global mblUrlBase ""')
             self.install(None)
             self.assertIn(DEFAULT_URL, self.update_source())
         finally:
-            self.uninstall()
+            try:
+                self.uninstall()
+            finally:
+                self.chr.run(dns)
 
 
 if __name__ == "__main__":

@@ -202,17 +202,22 @@ MBL_E2E=1 python -m unittest tests.e2e.test_routeros -v
 
 Variables opcionales: `MBL_E2E_CACHE` (caché de la imagen, por defecto `<tmp>/mbl-e2e-cache`),
 `MBL_E2E_CHR_VERSION` / `MBL_E2E_CHR_SHA256` (sustituyen a la versión fijada; SHA vacío = sin
-comprobar) y `MBL_E2E_ARTIFACTS=<dir>` (deja ahí los logs al terminar).
+comprobar) y `MBL_E2E_ARTIFACTS=<dir>` (`console.log` y `qemu.log` se escriben ahí mientras corre la
+VM; `router-log.txt` al terminar).
 
 ### Contra el CHR de Proxmox
 
-Sin arrancar QEMU, por clave SSH (nunca contraseña). **Destructivo**: reinstala MBL, reinicia el
+Sin arrancar QEMU, por clave SSH (nunca contraseña) y comprobando la clave de host con tu
+`known_hosts` (`StrictHostKeyChecking=accept-new`). **Destructivo**: reinstala MBL, reinicia el
 router y termina ejecutando `uninstall.rsc`.
 
 ```bash
 MBL_E2E=1 MBL_E2E_SSH=admin@192.168.33.118 MBL_E2E_DESTRUCTIVE=1 \
   python -m unittest tests.e2e.test_routeros -v     # opcional: MBL_E2E_KEY=~/.ssh/id_ed25519
 ```
+
+Si la ejecución se interrumpe (Ctrl-C, proceso matado), ejecuta `uninstall.rsc` en el router y vuelve a
+instalar MBL con `install.rsc`, porque puede quedar a medio instalar o apuntando al servidor de pruebas.
 
 ### Qué cubre cada caso
 
