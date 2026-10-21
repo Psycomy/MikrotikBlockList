@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - "routeros/**"
-      - "mbl/render.py"
+      - "mbl/**"
       - "tests/e2e/**"
       - ".github/workflows/routeros-e2e.yml"
   schedule:
@@ -15,6 +15,10 @@ on:
         description: "CHR version to test (empty = the pinned one in tests/e2e/chr-version.txt)"
         type: string
         default: ""
+
+concurrency:
+  group: routeros-e2e-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   e2e:
@@ -28,6 +32,8 @@ jobs:
       MBL_E2E_ARTIFACTS: ${{ github.workspace }}/e2e-artifacts
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
@@ -52,15 +58,17 @@ jobs:
             version=$(python -c 'from tests.e2e.harness import latest_stable; print(latest_stable())')
             sha=""
           elif [ -n "$INPUT_VERSION" ]; then
-            if ! printf '%s' "$INPUT_VERSION" | grep -Eq '^[0-9]+(\.[0-9]+)+([a-z]+[0-9]+)?$'; then
-              echo "::error::invalid chr_version: $INPUT_VERSION"
-              exit 1
-            fi
             version="$INPUT_VERSION"
             sha=""
           else
             version="$pinned_version"
             sha="$pinned_sha"
+          fi
+          # Whatever the source (input, upgrade server, pinned file), only a
+          # plain version string reaches GITHUB_OUTPUT / GITHUB_ENV.
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+(\.[0-9]+)+([a-z]+[0-9]+)?$'; then
+            echo "::error::invalid CHR version: $version"
+            exit 1
           fi
           # A version equal to the pinned one keeps its checksum.
           if [ "$version" = "$pinned_version" ]; then sha="$pinned_sha"; fi
@@ -75,6 +83,7 @@ jobs:
           key: chr-${{ steps.chr.outputs.version }}
 
       - name: RouterOS end-to-end tests
+        timeout-minutes: 25
         run: python -m unittest tests.e2e.test_routeros -v
 
       - name: Record the downloaded image checksum
@@ -86,7 +95,7 @@ jobs:
           fi
 
       - name: Upload console and router logs
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v7
         with:
           name: routeros-e2e-logs
