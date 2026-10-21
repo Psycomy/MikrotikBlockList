@@ -29,25 +29,26 @@ published list carries it as `script=<version>` in its header.
 - The backup of the last good list is `mbl-last.txt` (v2 used `mbl-last.rsc`).
 
 ### Added
-- RouterOS end-to-end tests on a disposable CHR (QEMU/KVM) in CI (`routeros-e2e` workflow), including
-  the v2 to v3 upgrade, injection, count mismatch, CRLF and invalid-ratio cases.
-- Optional `mblUrlBase` global to point the installer at another server (testing).
-- `--allow-growth` flag and manual `allow_growth` workflow input to publish after an expected jump.
+- End-to-end cases for the new reader: v2 to v3 upgrade, injected lines, count mismatch, CRLF and
+  invalid ratio; CI fetches tags so the upgrade test can install the `v2.0.0` script.
 
 ### Upgrade from v2
 Run the install command again. The installer replaces the v2 updater, the first load removes the old
 `mbl-*.rsc` files (`MBL: removed v2 files`) and the active list is never left empty.
 
-## [2.0.0] - 2026-10-19
+## [2.0.0] - 2026-10-19 (tagged 2026-10-21)
 
-### Changed
+The rewrite landed on 2026-10-19; the `v2.0.0` tag was created on 2026-10-21 and points at the
+phase-1 merge (`111382f`), so the items below up to that merge belong to this release.
+
+### Added
 - Rewrite of the generator and the RouterOS installer: daily build of an IPv4 blocklist published on the
   `lists` branch, raw-firewall rules on two alternating lists (`mbl-a`/`mbl-b`), schedulers
-  `mbl-daily` and `mbl-boot`, an allowlist and an uninstaller.
-- Validated on a CHR with RouterOS 7.24.5 (minimum supported: 7.21).
-
-### Later 2.x changes (2026-10-20)
-- Source study applied to `sources.toml` (see `docs/source-study-2026-10-20.md`).
-- Stale-list warning in `mbl-update` (`MBL: list is N days old`) and the build refusing to publish
-  when the total more than doubles.
-- CI moved to Node 24 actions.
+  `mbl-daily` and `mbl-boot`, an allowlist and an uninstaller. Validated on a CHR with RouterOS 7.24.5
+  (minimum supported: 7.21).
+- The build refuses to publish when the total more than doubles (2026-10-19).
+- Stale-list warning in `mbl-update` (`MBL: list is N days old`), the `--allow-growth` override
+  (also a manual `allow_growth` workflow input) and CI on Node 24 actions (PR #1, 2026-10-19).
+- Source study applied to `sources.toml` (PR #2, 2026-10-20; see `docs/source-study-2026-10-20.md`).
+- RouterOS end-to-end tests on a disposable CHR (QEMU/KVM) in CI, the `routeros-e2e` workflow, and an
+  optional `mblUrlBase` global to point the installer at a test server (phase 1, PR #3, 2026-10-21).

@@ -244,7 +244,7 @@ Los casos comparten un router y corren en orden.
 | `test_14b_newer_script_notice` | Una versión publicada mayor que la instalada (`script=` de la cabecera): `MBL: script <publicada> available (installed <instalada>) ...` con nivel `warning`, exactamente 1 línea tras la marca y después de `MBL: loaded` |
 | `test_14c_no_notice_when_not_newer` | Versión publicada igual o menor que la instalada: sin aviso |
 | `test_14d_bad_script_version_ignored` | Versión publicada con basura (`3.1.0;/system reboot`, `abc`, vacía): sin aviso, la carga termina bien y nada se ejecuta |
-| `test_14e_numeric_comparison` | Comparación numérica: `3.10.0` frente a `3.9.0` sí avisa |
+| `test_14e_numeric_comparison` | Comparación numérica: `3.10.0` publicada frente a `3.1.0` instalada sí avisa (una comparación de cadenas diría lo contrario) |
 | `test_15_final_uninstall` | Siempre el último: deja el router limpio |
 
 ### Rendimiento de la v3 (2026-10-21)
