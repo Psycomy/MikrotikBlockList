@@ -234,6 +234,11 @@ Los casos comparten un router y corren en orden.
 | `test_05_reboot_reloads` | Tras reiniciar, el modo boot recarga la lista |
 | `test_06_flash_path` | Equipos con `flash/`: copia de seguridad `flash/mbl-last.txt` |
 | `test_07_reinstall_no_duplicates` | Reinstalar no duplica reglas ni schedulers |
+| `test_07d_update_skips_family_without_rules` | Sin la regla `MBL: in` (comentario cambiado), `mbl-update` registra `MBL: ipv4 rules missing, update skipped`, no descarga nada y no toca las listas |
+| `test_07e_rules_changed_during_update` | `mbl-update` en segundo plano; mientras carga, la regla `MBL: in` pasa a `MBL-OLD: MBL: in` (lo que hace una reinstalación): registra `MBL: ipv4 rules changed during update, aborted`, vacía la lista destino y conserva la activa (reglas y entradas) |
+| `test_07f_reinstall_during_update` | `:execute` de `mbl-update` e instalador justo después, con un hilo que toma muestras: el instalador se niega (`an update is running`, nada cambia) o termina; en ambos casos la lista de `MBL: in` / `MBL-OLD: MBL: in` nunca baja de `MIN_ENTRIES`, al final hay 6 reglas, ningún `MBL-OLD:`, alguna lista con entradas y el lock libre |
+| `test_07g_installer_refuses_while_locked` | Con `mblRunning true` el instalador se detiene con su mensaje antes de cambiar nada (ninguna petición, mismas reglas, lista y `mbl-update`) |
+| `test_07h_lock_released_after_install_error` | Un instalador que falla en el paso 5 (marcador inexistente) muestra el error, libera el lock y deja las 6 reglas `MBL-OLD:` protegiendo con la lista vieja; una reinstalación la encuentra por `MBL-OLD: MBL: in` y lo limpia todo |
 | `test_08_uninstall_clean` | `uninstall.rsc` deja el router limpio |
 | `test_09_default_url_without_override` | Sin `mblUrlBase`, el instalador usa la URL de `lists/routeros-full.txt` |
 | `test_10_upgrade_from_v2` | Instala el `install.rsc` de la etiqueta `v2.0.0` (con su `mbl-last.rsc`) y reinstala la v3 encima. Un hilo toma muestras de la lista a la que apunta `MBL: in` durante la reinstalación: siempre ≥ `MIN_ENTRIES` (como mucho una muestra aislada sin regla mientras el instalador la recrea). Tras la primera carga v3: `MBL: loaded 10000 entries`, la lista activa cambió, `MBL: removed v2 files`, ningún `mbl-*.rsc` y existe `mbl-last.txt` |
@@ -254,7 +259,7 @@ Los casos comparten un router y corren en orden.
 | `test_14l_install_ipv6` | Primero con `/routeros6-full.txt` en 404: IPv4 se instala y el mensaje final dice `ipv6 yes - first ipv6 load failed, see log`. Luego `mblIpv6 true`: descarga `/routeros6-full.txt`, 6 reglas `MBL:` en `/ipv6 firewall raw`, `LIST6_SIZE` (300) entradas en `mbl6-a`/`mbl6-b`, `MBL: loaded N ipv6 entries into <lista>` y mensaje final `ipv6 yes`; IPv4 intacto; reinstalar con `mblIpv6 ""` conserva IPv6 |
 | `test_14m_ipv6_line_validation` | Fichero IPv6 con líneas inválidas (IPv4, `::/0`, prefijo `/129`, basura): no se convierten en entradas y se cargan solo las válidas (`IPV6_VALIDATION_SIZE`, 600) |
 | `test_14n_ipv6_failure_never_touches_ipv4` | Lista IPv6 caída (404) o truncada: IPv4 carga y conmuta con normalidad (6 reglas, `LIST_SIZE` entradas), la lista IPv6 activa no cambia, queda un log `MBL: ipv6 ...` con el motivo de cada caso (`download failed` / `rejected`) y el lock se libera |
-| `test_14o_disable_ipv6_cleans_up` | Parte de reglas, entradas y ficheros IPv6 existentes; `mblIpv6 false` al reinstalar: borra reglas, listas y ficheros IPv6 de MBL, IPv4 intacto, mensaje `ipv6 no`, `mbl-update` con `:local ipv6 "no"` y las actualizaciones siguientes no piden la lista IPv6 |
+| `test_14o_disable_ipv6_cleans_up` | Parte de reglas (también una `MBL-OLD:`), entradas y ficheros IPv6 existentes; `mblIpv6 false` al reinstalar: borra reglas, listas y ficheros IPv6 de MBL, IPv4 intacto, mensaje `ipv6 no`, `mbl-update` con `:local ipv6 "no"` y las actualizaciones siguientes no piden la lista IPv6 |
 | `test_15_final_uninstall` | Siempre el último: instala con IPv6 y desinstala; deja el router limpio en las dos familias |
 
 ### Rendimiento de la v3 (2026-10-21)
