@@ -339,7 +339,7 @@ class RouterOsTest(unittest.TestCase):
         # every line is loaded, including those cut between two /file read chunks
         self.assertEqual(self.count(self.active_list()), LIST_SIZE)
         log = self.log()
-        self.assertIn(f"MBL: installed (script {self.installed_version})", log)
+        self.assertIn(f"MBL: installed (script {self.installed_version}, variant full)", log)
         warning = f"MBL: using test URL base {self.base}"
         self.assertTrue(any(warning in ln and "warning" in ln.split(" ", 1)[0]
                             for ln in log.splitlines()), log)

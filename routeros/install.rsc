@@ -22,16 +22,17 @@
   :put "MBL: using test URL base $mblUrlBase"
   :log warning "MBL: using test URL base $mblUrlBase"
 }
-# The router downloads a plain list (one address per line) and validates
-# every line as data; nothing downloaded is ever executed.
-:local mblUrl ($mblBase . "/routeros-full.txt")
+# List variant: "full" (default) or "lite" (a shorter list for small
+# routers). Set :global mblVariant "lite" before /import to choose it; when
+# unset, a reinstall keeps the variant already installed. See step 1.
+:global mblVariant
 # Minimum RouterOS version (major.minor). 7.21 is the first release with the
 # per-service built-in CA store (/certificate settings builtin-trust-store,
 # 7.21 changelog). Tested on CHR 7.24.5.
 :local mblMinVersion "7.21"
 # Version of this installer and of the mbl-update it installs (= VERSION file).
 # mbl-update logs a warning when the published list says a newer one exists.
-:local mblScriptVersion "3.1.0"
+:local mblScriptVersion "3.2.0"
 
 # "7.21.3 (stable)" -> 7021 ; "7.19rc2" -> 7019
 :local mblVerNum do={
@@ -60,6 +61,33 @@
 :if ([:len [/interface list find where name="LAN"]] = 0) do={
   :error "MBL: interface list LAN not found (add your LAN interfaces to /interface list LAN). Nothing was changed."
 }
+# Variant: :global mblVariant if set, else the one in the installed
+# mbl-update (its ':local variant "<v>"' line, read before step 3 removes
+# it), else full. Only "full" or "lite" is ever used.
+:local mblVar ""
+:local want [:tostr $mblVariant]
+:if ([:len $want] > 0) do={
+  :if ($want != "full" && $want != "lite") do={
+    :error "MBL: invalid mblVariant \"$want\" (use \"full\" or \"lite\"). Nothing was changed."
+  }
+  :set mblVar $want
+} else={
+  :local prev [/system script find where name="mbl-update"]
+  :if ([:len $prev] > 0) do={
+    :local prevSrc [/system script get ($prev->0) source]
+    :local key ":local variant \""
+    :local q [:find $prevSrc $key]
+    :if ([:typeof $q] = "num") do={
+      :local v [:pick $prevSrc ($q + [:len $key]) ($q + [:len $key] + 5)]
+      :if ($v = "full\"") do={ :set mblVar "full" }
+      :if ($v = "lite\"") do={ :set mblVar "lite" }
+    }
+  }
+}
+:if ($mblVar = "") do={ :set mblVar "full" }
+# The router downloads a plain list (one address per line) and validates
+# every line as data; nothing downloaded is ever executed.
+:local mblUrl ($mblBase . "/routeros-" . $mblVar . ".txt")
 
 # ------------------------------------------- 2. HTTPS: built-in CA for fetch
 # builtin-trust-store is "all", "untrusted", "default" (= current-defaults)
@@ -112,8 +140,8 @@
 }
 
 # --------------------------------------------------- 5. mbl-update script
-# The body is stored verbatim; @MBL_URL@ and @MBL_VERSION@ are replaced with
-# $mblUrl and $mblScriptVersion below.
+# The body is stored verbatim; @MBL_URL@, @MBL_VERSION@ and @MBL_VARIANT@ are
+# replaced with $mblUrl, $mblScriptVersion and $mblVar below.
 /system script add name=mbl-update policy=ftp,read,write,policy,test \
   dont-require-permissions=no comment="MBL: blocklist updater" source={
 # MikrotikBlockList v3 updater - installed by install.rsc, do not edit.
@@ -125,7 +153,11 @@
 # checked against the a.b.c.d[/p] form, :toip and the prefix range.
 :local url "@MBL_URL@"
 :local scriptVersion "@MBL_VERSION@"
+# the list header must name this variant
+:local variant "@MBL_VARIANT@"
+# minimum file size in bytes; the lite list is much shorter
 :local minSize 100000
+:if ($variant = "lite") do={ :set minSize 20000 }
 :local minEntries 1000
 # /file read returns at most 32768 bytes per call (RouterOS 7.24)
 :local chunkSize 32768
@@ -336,7 +368,7 @@
                 :set reason "no header"
               } else={
                 :local en [$mblField $ln "entries"]
-                :if ([$mblField $ln "format"] != "1" || [$mblField $ln "family"] != "ipv4" || !($en ~ "^[0-9]+\$")) do={
+                :if ([$mblField $ln "format"] != "1" || [$mblField $ln "family"] != "ipv4" || [$mblField $ln "variant"] != $variant || !($en ~ "^[0-9]+\$")) do={
                   :set reason "bad header"
                 } else={
                   :set entries [:tonum $en]
@@ -506,6 +538,13 @@
 :if ([:typeof $p] = "nil") do={ :error "MBL: internal error, version placeholder not found in mbl-update" }
 /system script set [find where name="mbl-update"] \
   source=([:pick $src 0 $p] . $mblScriptVersion . [:pick $src ($p + [:len $ph]) [:len $src]])
+# And the variant.
+:set ph "@MBL_VARIANT@"
+:set src [/system script get [find where name="mbl-update"] source]
+:set p [:find $src $ph]
+:if ([:typeof $p] = "nil") do={ :error "MBL: internal error, variant placeholder not found in mbl-update" }
+/system script set [find where name="mbl-update"] \
+  source=([:pick $src 0 $p] . $mblVar . [:pick $src ($p + [:len $ph]) [:len $src]])
 
 # --------------------------------------------------------- 6. schedulers
 # Daily at a random time so routers do not all hit GitHub at once.
@@ -553,10 +592,10 @@
 }
 /file remove [find where name="install.rsc" or name="flash/install.rsc"]
 :if ($mblLastOk = true) do={
-  :put "MBL: installed (script $mblScriptVersion)"
-  :log info "MBL: installed (script $mblScriptVersion)"
+  :put "MBL: installed (script $mblScriptVersion, variant $mblVar)"
+  :log info "MBL: installed (script $mblScriptVersion, variant $mblVar)"
 } else={
-  :put "MBL: WARNING installed (script $mblScriptVersion), but the first load failed or was skipped. See /log print where message~\"MBL\""
-  :log warning "MBL: installed (script $mblScriptVersion), but the first load failed or was skipped"
+  :put "MBL: WARNING installed (script $mblScriptVersion, variant $mblVar), but the first load failed or was skipped. See /log print where message~\"MBL\""
+  :log warning "MBL: installed (script $mblScriptVersion, variant $mblVar), but the first load failed or was skipped"
 }
 }
