@@ -41,11 +41,21 @@ BASE_CONFIG = (
 _PROMPT = rb"\[admin@[^\]\r\n]*\] > "
 _SSH_OPTS = (
     "-o", "BatchMode=yes",
-    "-o", "StrictHostKeyChecking=no",
-    "-o", "UserKnownHostsFile=/dev/null",
     "-o", "LogLevel=ERROR",
     "-o", "ConnectTimeout=10",
 )
+# Only for VMs the harness boots itself: their host key is new every run.
+_THROWAWAY_HOST_OPTS = (
+    "-o", "StrictHostKeyChecking=no",
+    "-o", "UserKnownHostsFile=/dev/null",
+)
+# Existing hosts: the user's known_hosts; only a first-seen key is accepted.
+_EXISTING_HOST_OPTS = ("-o", "StrictHostKeyChecking=accept-new")
+# Download attempts and the first back-off delay (doubles every attempt).
+ATTEMPTS = 3
+BACKOFF = 5.0
+# A client that does not finish the TLS handshake (or goes idle) is dropped.
+TLS_TIMEOUT = 15.0
 
 
 class ChrError(Exception):
@@ -70,7 +80,18 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def ensure_image(version: str, sha256: str | None, cache: Path) -> Path:
+def _retry(fn, what: str, backoff: float):
+    """Call `fn` up to ATTEMPTS times on OSError, sleeping backoff, 2x, ... between."""
+    for attempt in range(ATTEMPTS):
+        try:
+            return fn()
+        except OSError as e:
+            if attempt == ATTEMPTS - 1:
+                raise ChrError(f"cannot download {what} after {ATTEMPTS} attempts: {e}") from e
+            time.sleep(backoff * 2 ** attempt)
+
+
+def ensure_image(version: str, sha256: str | None, cache: Path, backoff: float = BACKOFF) -> Path:
     """Download and unzip chr-<version>.img into `cache`; `sha256` is of the zip."""
     cache.mkdir(parents=True, exist_ok=True)
     zip_path = cache / f"chr-{version}.img.zip"
@@ -81,12 +102,16 @@ def ensure_image(version: str, sha256: str | None, cache: Path) -> Path:
     if not zip_path.exists():
         part = zip_path.with_name(zip_path.name + ".part")
         url = IMAGE_URL.format(version=version)
-        try:
-            with urllib.request.urlopen(url, timeout=120) as r, open(part, "wb") as f:
-                shutil.copyfileobj(r, f)
-        except OSError as e:
-            part.unlink(missing_ok=True)
-            raise ChrError(f"cannot download {url}: {e}") from e
+
+        def download() -> None:
+            try:
+                with urllib.request.urlopen(url, timeout=120) as r, open(part, "wb") as f:
+                    shutil.copyfileobj(r, f)
+            except OSError:
+                part.unlink(missing_ok=True)
+                raise
+
+        _retry(download, url, backoff)
         if sha256:
             got = _sha256(part)
             if got != sha256:
@@ -102,16 +127,45 @@ def ensure_image(version: str, sha256: str | None, cache: Path) -> Path:
     return img
 
 
-def latest_stable() -> str:
-    with urllib.request.urlopen(STABLE_URL, timeout=30) as r:
-        return r.read().decode().split()[0]
+def latest_stable(backoff: float = BACKOFF) -> str:
+    def fetch() -> str:
+        with urllib.request.urlopen(STABLE_URL, timeout=30) as r:
+            return r.read().decode().split()[0]
+
+    return _retry(fetch, STABLE_URL, backoff)
+
+
+class _TlsHttpServer(ThreadingHTTPServer):
+    """HTTPS server doing each TLS handshake in the connection's own thread.
+
+    Wrapping the listening socket would handshake inside accept(), so a single
+    client that never sends a ClientHello would block every other request.
+    """
+
+    def __init__(self, address, handler, ctx: ssl.SSLContext):
+        self.ctx = ctx
+        super().__init__(address, handler)
+
+    def get_request(self):
+        sock, addr = self.socket.accept()
+        return self.ctx.wrap_socket(sock, server_side=True, do_handshake_on_connect=False), addr
+
+    def finish_request(self, request, client_address):
+        request.settimeout(TLS_TIMEOUT)
+        request.do_handshake()
+        super().finish_request(request, client_address)
+
+    def handle_error(self, request, client_address):
+        pass  # dropped/idle/non-TLS clients: not the test's business
 
 
 class TlsServer:
     """Serves `root` over HTTPS with a certificate for 10.0.2.2 and 127.0.0.1.
 
+    Listens on 127.0.0.1 only (QEMU user networking reaches it as 10.0.2.2).
     `extra_ips` adds more IP SANs (e.g. this host's LAN address, so that an
-    existing CHR on the LAN can verify the certificate).
+    existing CHR on the LAN can verify the certificate) and then listens on
+    all addresses.
     """
 
     def __init__(self, root: Path, extra_ips: tuple[str, ...] = ()):
@@ -175,22 +229,29 @@ class TlsServer:
                 super().do_GET()
 
         handler = functools.partial(Handler, directory=str(self.root))
-        self._httpd = ThreadingHTTPServer(("0.0.0.0", self.port), handler)
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(self._dir / "server.crt", self._dir / "server.key")
-        self._httpd.socket = ctx.wrap_socket(self._httpd.socket, server_side=True)
-        self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
-        self._thread.start()
+        bind = "0.0.0.0" if self.extra_ips else "127.0.0.1"
+        httpd = _TlsHttpServer((bind, self.port), handler, ctx)
+        try:
+            thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+            thread.start()
+        except BaseException:
+            httpd.server_close()
+            raise
+        # Only a server whose serve_forever thread runs is ever shut down.
+        self._httpd, self._thread = httpd, thread
         atexit.register(self.stop)
 
     def stop(self) -> None:
-        if self._httpd is not None:
-            self._httpd.shutdown()
-            self._httpd.server_close()
-            self._httpd = None
-        if self._thread is not None:
-            self._thread.join(timeout=5)
-            self._thread = None
+        httpd, self._httpd = self._httpd, None
+        thread, self._thread = self._thread, None
+        if httpd is not None:
+            if thread is not None and thread.is_alive():
+                httpd.shutdown()
+            httpd.server_close()
+        if thread is not None:
+            thread.join(timeout=5)
         if self._tmp is not None:
             self._tmp.cleanup()
             self._tmp = None
@@ -236,8 +297,11 @@ def _expect(sock: "socket.socket | _TeeSocket", pattern: bytes, timeout: float) 
 
 
 class Chr:
-    def __init__(self, user: str, host: str, port: int, key: Path | None):
+    def __init__(self, user: str, host: str, port: int, key: Path | None,
+                 throwaway: bool = False):
         self.user, self.host, self.port, self.key = user, host, port, key
+        # True for a VM booted here: its host key is not checked or recorded.
+        self.throwaway = throwaway
         self.password: str | None = None
         self._proc: subprocess.Popen | None = None
         self._sock: socket.socket | _TeeSocket | None = None
@@ -253,14 +317,22 @@ class Chr:
         return cls(user or "admin", host, int(port or 22), key)
 
     @classmethod
-    def boot(cls, image: Path, workdir: Path, boot_timeout=180, ssh_timeout=120) -> "Chr":
+    def boot(cls, image: Path, workdir: Path, boot_timeout=180, ssh_timeout=120,
+             log_dir: Path | None = None) -> "Chr":
+        """Boot a disposable CHR from a copy of `image` in `workdir`.
+
+        console.log and qemu.log are written to `log_dir` (default `workdir`)
+        as they happen, so they survive even if the process is killed.
+        """
         workdir = Path(workdir)
         workdir.mkdir(parents=True, exist_ok=True)
+        log_dir = Path(log_dir) if log_dir is not None else workdir
+        log_dir.mkdir(parents=True, exist_ok=True)
         key = workdir / "id_ed25519"
-        chr_ = cls("admin", "127.0.0.1", free_port(), key)
+        chr_ = cls("admin", "127.0.0.1", free_port(), key, throwaway=True)
         atexit.register(chr_.stop)
         try:
-            chr_._start_qemu(Path(image), workdir)
+            chr_._start_qemu(Path(image), workdir, log_dir)
             chr_._console_login(boot_timeout)
             chr_._console_setup()
             chr_._close_console()
@@ -269,12 +341,12 @@ class Chr:
                 chr_.run(cmd)
         except (ChrError, OSError, TimeoutError) as e:
             chr_.stop()
-            raise ChrError(f"CHR boot failed: {e}{chr_._log_tail(workdir)}", chr_) from e
+            raise ChrError(f"CHR boot failed: {e}{chr_._log_tail(log_dir)}", chr_) from e
         return chr_
 
     # -- boot internals -----------------------------------------------------
 
-    def _start_qemu(self, image: Path, workdir: Path) -> None:
+    def _start_qemu(self, image: Path, workdir: Path, log_dir: Path) -> None:
         disk = workdir / "chr.img"
         shutil.copyfile(image, disk)
         for p in (self.key, self.key.with_suffix(".pub")):
@@ -293,13 +365,14 @@ class Chr:
             "-drive", f"file={disk},format=raw,if=virtio",
             "-nic", f"user,model=virtio,hostfwd=tcp:127.0.0.1:{self.port}-:22",
         ]
-        with open(workdir / "qemu.log", "wb") as log:
+        self.console_log = log_dir / "console.log"
+        self.console_log.write_bytes(b"")
+        with open(log_dir / "qemu.log", "wb") as log:
             self._proc = subprocess.Popen(
                 cmd, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
                 start_new_session=True,
             )
         self._sock_path = sock_path
-        self.console_log = workdir / "console.log"
 
     def _check_alive(self) -> None:
         if self._proc is not None and self._proc.poll() is not None:
@@ -378,9 +451,9 @@ class Chr:
             self._sock.close()
             self._sock = None
 
-    def _log_tail(self, workdir: Path) -> str:
+    def _log_tail(self, log_dir: Path) -> str:
         try:
-            tail = (workdir / "qemu.log").read_text(errors="replace").strip()[-500:]
+            tail = (log_dir / "qemu.log").read_text(errors="replace").strip()[-500:]
         except OSError:
             return ""
         return f"\nqemu output: {tail}" if tail else ""
@@ -389,6 +462,7 @@ class Chr:
 
     def _ssh_base(self, tool: str) -> list[str]:
         args = [tool, *_SSH_OPTS]
+        args += _THROWAWAY_HOST_OPTS if self.throwaway else _EXISTING_HOST_OPTS
         if self.key is not None:
             args += ["-i", str(self.key), "-o", "IdentitiesOnly=yes"]
         return args
