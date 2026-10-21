@@ -17,6 +17,10 @@ class Normalize6Tests(unittest.TestCase):
         )
         self.assertEqual(normalize6(src, []), [])
 
+    def test_drops_non_global_per_python_and_documentation_3fff(self):
+        src = nets("3fff::/20", "3fff:1::/48", "100::/64", "2001:2::/48", "2001:10::/28")
+        self.assertEqual(normalize6(src, []), [])
+
     def test_drops_wider_than_slash19(self):
         self.assertEqual(normalize6(nets("2a00::/16", "2a00::/18"), []), [])
         self.assertEqual(normalize6(nets("2a00::/19"), []), nets("2a00::/19"))

@@ -1,7 +1,7 @@
 """Rendering of the published output files."""
 import json
 from datetime import datetime, timezone
-from ipaddress import IPv4Network
+from ipaddress import IPv4Network, IPv6Network
 from pathlib import Path
 
 from mbl.fetch import SourceResult
@@ -11,8 +11,9 @@ PROJECT_URL = "https://github.com/Psycomy/MikrotikBlockList"
 NOTICE_URL = PROJECT_URL + "/blob/lists/NOTICE.md"
 
 
-def _cidr(net: IPv4Network) -> str:
-    return str(net.network_address) if net.prefixlen == 32 else str(net)
+def _cidr(net: IPv4Network | IPv6Network) -> str:
+    host = 32 if net.version == 4 else 128
+    return str(net.network_address) if net.prefixlen == host else str(net)
 
 
 def _rsc(addresses: list[str], stamp: str) -> str:
@@ -78,6 +79,7 @@ def write_outputs(
     results: list[SourceResult],
     generated_at: datetime,
     script_version: str = "0.0.0",
+    variants6: dict[str, list[IPv6Network]] | None = None,
 ) -> None:
     """Write every published file; the "full" variant is mandatory."""
     if "full" not in variants:
@@ -87,16 +89,22 @@ def write_outputs(
     generated_at = generated_at.astimezone(timezone.utc)
     stamp = generated_at.strftime(TIME_FORMAT)
     addresses = {v: [_cidr(n) for n in nets] for v, nets in variants.items()}
+    addresses6 = {v: [_cidr(n) for n in nets] for v, nets in (variants6 or {}).items()}
     total = len(addresses["full"])
 
     stats = {
         "generated_at": stamp,
         "total": total,
         "variants": {v: {"total": len(a)} for v, a in addresses.items()},
+        "ipv6": {
+            "published": variants6 is not None,
+            "variants": {v: {"total": len(a)} for v, a in addresses6.items()},
+        },
         "sources": {
             r.source.name: {
                 "category": r.source.category,
-                "entries": len(r.networks),
+                "entries": sum(1 for n in r.networks if n.version == 4),
+                "entries6": sum(1 for n in r.networks if n.version == 6),
                 "invalid": r.invalid,
                 "error": r.error,
             }
@@ -127,5 +135,10 @@ def write_outputs(
         plain = "blocklist.txt" if v == "full" else f"blocklist-{v}.txt"
         files[plain] = "".join(a + "\n" for a in addrs)
         files[f"routeros-{v}.txt"] = router_txt(addrs, stamp, script_version, variant=v)
+    for v, addrs in addresses6.items():
+        plain = "blocklist6.txt" if v == "full" else f"blocklist6-{v}.txt"
+        files[plain] = "".join(a + "\n" for a in addrs)
+        files[f"routeros6-{v}.txt"] = router_txt(addrs, stamp, script_version,
+                                                 variant=v, family="ipv6")
     for name, content in files.items():
         (out_dir / name).write_text(content, encoding="utf-8", newline="\n")

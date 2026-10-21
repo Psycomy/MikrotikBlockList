@@ -4,7 +4,7 @@ import json
 import tempfile
 import unittest
 from datetime import datetime, timezone
-from ipaddress import IPv4Network
+from ipaddress import IPv4Network, IPv6Network
 from pathlib import Path
 from unittest import mock
 
@@ -38,6 +38,28 @@ def _fetcher(count=6000, error=None):
         if error:
             return [SourceResult(src, [], 0, error)]
         return [SourceResult(src, _nets(count), 0, None)]
+    return fetch
+
+
+SOURCES6_TOML = SOURCES_TOML + """
+[[source]]
+name = "v6"
+url = "https://example.invalid/v6"
+format = "plain"
+category = "attack"
+variants = ["lite", "full"]
+"""
+FILES6 = {"routeros6-full.txt", "routeros6-lite.txt", "blocklist6.txt", "blocklist6-lite.txt"}
+
+
+def _nets6(count):
+    return [IPv6Network(f"2a00:{i:x}::1/128") for i in range(1, count + 1)]
+
+
+def _fetcher6(count6=100, count=6000):
+    def fetch(sources):
+        return [SourceResult(sources[0], _nets(count), 0, None),
+                SourceResult(sources[1], _nets6(count6), 0, None)]
     return fetch
 
 
@@ -283,6 +305,121 @@ required = true
     def test_previous_stats_without_sources(self):
         with self._stats({"total": 7000}):
             self.assertEqual(_previous_stats("http://x"), ({"full": 7000}, {}))
+
+    def _build_err(self, fetcher, **kwargs):
+        kwargs.setdefault("version_path", self.version)
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            code = build(self.sources, self.allow, self.out, kwargs.pop("previous", None),
+                         now=WHEN, fetcher=fetcher, **kwargs)
+        return code, err.getvalue()
+
+    def test_writes_ipv6_files(self):
+        self.sources.write_text(SOURCES6_TOML)
+        self.assertEqual(self._build(_fetcher6()), 0)
+        self.assertEqual({p.name for p in self.out.iterdir()}, FILES | FILES6)
+        self.assertIn("family=ipv6", (self.out / "routeros6-full.txt").read_text().splitlines()[0])
+
+    def test_ipv6_failure_does_not_block_ipv4(self):
+        self.sources.write_text(SOURCES6_TOML)
+        code, err = self._build_err(_fetcher6(count6=10))
+        self.assertEqual(code, 0)
+        self.assertEqual({p.name for p in self.out.iterdir()}, FILES)
+        stats = json.loads((self.out / "stats.json").read_text())
+        self.assertFalse(stats["ipv6"]["published"])
+        self.assertIn("ipv6", err)
+        self.assertIn("below the minimum", err)
+
+    def test_ipv6_failure_is_reported_in_step_summary(self):
+        self.sources.write_text(SOURCES6_TOML)
+        summary = self.tmp / "summary.md"
+        with mock.patch.dict("os.environ", {"GITHUB_STEP_SUMMARY": str(summary)}):
+            self.assertEqual(self._build(_fetcher6(count6=10)), 0)
+        self.assertIn("IPv6", summary.read_text())
+
+    def test_ipv6_lite_failure_withholds_all_ipv6(self):
+        self.sources.write_text(SOURCES6_TOML)
+        self.assertEqual(self._build(_fetcher6(count6=19)), 0)  # full needs 50, lite 20
+        self.assertEqual({p.name for p in self.out.iterdir()}, FILES)
+
+    @mock.patch("mbl.build._previous_stats", return_value=(
+        {"full": 6000, "lite": 6000, "ipv6:full": 100, "ipv6:lite": 100}, {}))
+    def test_ipv6_drop_and_growth_withhold_ipv6_only(self, _prev):
+        self.sources.write_text(SOURCES6_TOML)
+        self.assertEqual(self._build(_fetcher6(count6=40), previous="x"), 0)
+        self.assertEqual({p.name for p in self.out.iterdir()}, FILES)
+        self.assertEqual(self._build(_fetcher6(count6=201), previous="x"), 0)
+        self.assertEqual({p.name for p in self.out.iterdir()}, FILES)
+
+    @mock.patch("mbl.build._previous_stats", return_value=(
+        {"full": 6000, "lite": 6000, "ipv6:full": 100, "ipv6:lite": 100},
+        {"v6": 50, "ipv6:v6": 60}))
+    def test_ipv6_explained_drop_uses_ipv6_entries(self, _prev):
+        self.sources.write_text(SOURCES6_TOML + """
+[[source]]
+name = "v6b"
+url = "https://example.invalid/v6b"
+format = "plain"
+category = "attack"
+variants = ["lite", "full"]
+""")
+
+        def fetch(sources):
+            return [SourceResult(sources[0], _nets(6000), 0, None),
+                    SourceResult(sources[1], _nets6(40), 0, None),
+                    SourceResult(sources[2], [], 0, "boom")]
+        # v6b is missing from previous entries -> explains 0 -> 100 -> 40 is a >50% drop
+        self.assertEqual(self._build(fetch, previous="x"), 0)
+        self.assertEqual({p.name for p in self.out.iterdir()}, FILES)
+
+    @mock.patch("mbl.build._previous_stats", return_value=(
+        {"full": 6000, "lite": 6000, "ipv6:full": 200, "ipv6:lite": 200},
+        {"v6b": 150, "ipv6:v6b": 150, "ipv6:v6": 50}))
+    def test_ipv6_explained_drop_publishes(self, _prev):
+        self.sources.write_text(SOURCES6_TOML + """
+[[source]]
+name = "v6b"
+url = "https://example.invalid/v6b"
+format = "plain"
+category = "attack"
+variants = ["lite", "full"]
+""")
+
+        def fetch(sources):
+            return [SourceResult(sources[0], _nets(6000), 0, None),
+                    SourceResult(sources[1], _nets6(60), 0, None),
+                    SourceResult(sources[2], [], 0, "boom")]
+        # 200 -> 60 is a >50% drop, explained by v6b's 150 previous IPv6 entries
+        self.assertEqual(self._build(fetch, previous="x"), 0)
+        self.assertEqual({p.name for p in self.out.iterdir()}, FILES | FILES6)
+
+    def test_ipv6_stats_and_previous_totals(self):
+        self.sources.write_text(SOURCES6_TOML)
+        self.assertEqual(self._build(_fetcher6(count6=100)), 0)
+        stats = json.loads((self.out / "stats.json").read_text())
+        self.assertEqual(stats["ipv6"], {"published": True, "variants": {
+            "full": {"total": 100}, "lite": {"total": 100}}})
+        self.assertEqual(stats["sources"]["main"]["entries"], 6000)
+        self.assertEqual(stats["sources"]["main"]["entries6"], 0)
+        self.assertEqual(stats["sources"]["v6"]["entries"], 0)
+        self.assertEqual(stats["sources"]["v6"]["entries6"], 100)
+        with self._stats(stats):
+            totals, entries = _previous_stats("http://x")
+        self.assertEqual(totals, {"full": 6000, "lite": 6000, "ipv6:full": 100, "ipv6:lite": 100})
+        self.assertEqual(entries["ipv6:v6"], 100)
+        self.assertEqual(entries["v6"], 0)
+
+    def test_previous_without_ipv6_section_has_no_ipv6_totals(self):
+        with self._stats({"total": 7000, "variants": {"full": {"total": 7000}}}):
+            self.assertEqual(_previous_totals("http://x"), {"full": 7000})
+
+    def test_ipv4_outputs_unchanged_by_ipv6(self):
+        self.assertEqual(self._build(_fetcher()), 0)
+        before = {n: (self.out / n).read_bytes() for n in FILES - {"stats.json", "NOTICE.md"}}
+        self.sources.write_text(SOURCES6_TOML)
+        self.assertEqual(self._build(_fetcher6()), 0)
+        for name, data in before.items():
+            self.assertEqual((self.out / name).read_bytes(), data, name)
 
     def test_build_reads_version(self):
         self.version.write_text("9.8.7\n")

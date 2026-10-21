@@ -3,7 +3,7 @@ import re
 import tempfile
 import unittest
 from datetime import datetime, timezone
-from ipaddress import IPv4Network
+from ipaddress import IPv4Network, IPv6Network
 from pathlib import Path
 
 from mbl.fetch import SourceResult
@@ -67,6 +67,47 @@ class RenderTest(unittest.TestCase):
         self.assertEqual(stats["total"], 2)
         self.assertEqual(stats["variants"], {"full": {"total": 2}, "lite": {"total": 1}})
 
+    def test_writes_ipv6_files(self):
+        full = [IPv4Network("8.8.8.8/32")]
+        full6 = [IPv6Network("2a00:1::/32"), IPv6Network("2a00:2::1/128")]
+        lite6 = [IPv6Network("2a00:2::1/128")]
+        with tempfile.TemporaryDirectory() as tmp:
+            write_outputs(Path(tmp), {"full": full}, _results(full), WHEN, "3.3.0",
+                          variants6={"full": full6, "lite": lite6})
+            out = Path(tmp)
+            r6 = (out / "routeros6-full.txt").read_text()
+            r6l = (out / "routeros6-lite.txt").read_text().splitlines()
+            b6 = (out / "blocklist6.txt").read_text()
+            b6l = (out / "blocklist6-lite.txt").read_text()
+            stats = json.loads((out / "stats.json").read_text())
+        self.assertEqual(r6, router_txt(["2a00:1::/32", "2a00:2::1"], "2026-10-19T04:17:00Z",
+                                        "3.3.0", variant="full", family="ipv6"))
+        self.assertIn("family=ipv6", r6.splitlines()[0])
+        self.assertIn("variant=lite", r6l[0])
+        self.assertEqual(b6, "2a00:1::/32\n2a00:2::1\n")
+        self.assertEqual(b6l, "2a00:2::1\n")
+        self.assertEqual(stats["ipv6"], {"published": True, "variants": {
+            "full": {"total": 2}, "lite": {"total": 1}}})
+
+    def test_no_ipv6_files_without_variants6(self):
+        full = [IPv4Network("8.8.8.8/32")]
+        with tempfile.TemporaryDirectory() as tmp:
+            write_outputs(Path(tmp), {"full": full}, _results(full), WHEN)
+            names = {p.name for p in Path(tmp).iterdir()}
+            stats = json.loads((Path(tmp) / "stats.json").read_text())
+        self.assertFalse([n for n in names if "6" in n])
+        self.assertEqual(stats["ipv6"], {"published": False, "variants": {}})
+
+    def test_source_entries_count_only_ipv4(self):
+        src = Source("mix", "https://x", "plain", "attack")
+        res = [SourceResult(src, [IPv4Network("8.8.8.8/32"), IPv6Network("2a00::1/128"),
+                                  IPv6Network("2a00::2/128")], 0, None)]
+        with tempfile.TemporaryDirectory() as tmp:
+            write_outputs(Path(tmp), {"full": []}, res, WHEN)
+            stats = json.loads((Path(tmp) / "stats.json").read_text())
+        self.assertEqual(stats["sources"]["mix"]["entries"], 1)
+        self.assertEqual(stats["sources"]["mix"]["entries6"], 2)
+
     def test_write_outputs_requires_full(self):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(ValueError):
@@ -129,7 +170,7 @@ class RenderTest(unittest.TestCase):
         self.assertEqual(stats["generated_at"], "2026-10-19T04:17:00Z")
         self.assertEqual(
             stats["sources"]["spamhaus-drop"],
-            {"category": "attack", "entries": 61234, "invalid": 2, "error": None},
+            {"category": "attack", "entries": 61234, "entries6": 0, "invalid": 2, "error": None},
         )
         self.assertEqual(
             entries,

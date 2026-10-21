@@ -4,7 +4,7 @@ import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from ipaddress import IPv4Network
+from ipaddress import IPv4Network, IPv6Network
 
 from mbl.parsers import parse
 from mbl.sources import Source
@@ -15,7 +15,7 @@ USER_AGENT = "MikrotikBlockList/2.0 (+https://github.com/Psycomy/MikrotikBlockLi
 @dataclass
 class SourceResult:
     source: Source
-    networks: list[IPv4Network] = field(default_factory=list)
+    networks: list[IPv4Network | IPv6Network] = field(default_factory=list)
     invalid: int = 0
     error: str | None = None
 

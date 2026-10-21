@@ -81,7 +81,7 @@ def normalize(
 
 
 # Non-global IPv6 blocks: unspecified/loopback/IPv4-mapped (::/8), NAT64,
-# Teredo, documentation, 6to4, ULA, link-local and multicast. Overlap drops.
+# Teredo, documentation (incl. 3fff::/20), 6to4, ULA, link-local and multicast. Overlap drops.
 NON_GLOBAL_BLOCKS6: tuple[IPv6Network, ...] = tuple(
     IPv6Network(n)
     for n in (
@@ -91,6 +91,7 @@ NON_GLOBAL_BLOCKS6: tuple[IPv6Network, ...] = tuple(
         "2001::/32",
         "2001:db8::/32",
         "2002::/16",
+        "3fff::/20",
         "fc00::/7",
         "fe80::/10",
         "ff00::/8",
@@ -101,7 +102,9 @@ _NON_GLOBAL_RANGES6 = tuple((int(b.network_address), int(b.broadcast_address)) f
 
 def _is_blockable6(net: IPv6Network) -> bool:
     first, last = int(net.network_address), int(net.broadcast_address)
-    return not any(first <= hi and lo <= last for lo, hi in _NON_GLOBAL_RANGES6)
+    if any(first <= hi and lo <= last for lo, hi in _NON_GLOBAL_RANGES6):
+        return False
+    return net.is_global  # also drops e.g. 100::/64, 2001:2::/48, 2001:10::/28
 
 
 def normalize6(
