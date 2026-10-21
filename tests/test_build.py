@@ -1,5 +1,6 @@
 import contextlib
 import io
+import json
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -8,7 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 from mbl.__main__ import main
-from mbl.build import build
+from mbl.build import _previous_totals, build
 from mbl.fetch import SourceResult
 from mbl.sources import Source
 
@@ -20,9 +21,11 @@ url = "https://example.invalid/main"
 format = "plain"
 category = "attack"
 required = true
+variants = ["lite", "full"]
 """
 FILES = {"blocklist.rsc", "blocklist.txt", "stats.json",
-         "badge-entries.json", "badge-updated.json", "NOTICE.md", "routeros-full.txt"}
+         "badge-entries.json", "badge-updated.json", "NOTICE.md", "routeros-full.txt",
+         "routeros-lite.txt", "blocklist-lite.txt"}
 
 
 def _nets(count):
@@ -80,16 +83,81 @@ class BuildTest(unittest.TestCase):
     def test_build_unreachable_previous_is_ignored(self):
         self.assertEqual(self._build(_fetcher(), previous="http://127.0.0.1:9/stats.json"), 0)
 
-    @mock.patch("mbl.build._previous_total", return_value=6000)
+    @mock.patch("mbl.build._previous_totals", return_value={"full": 6000, "lite": 6000})
     def test_build_refuses_growth_above_double(self, _prev):
         self.assertEqual(self._build(_fetcher(count=12001), previous="x"), 1)
         self.assertFalse(self.out.exists())
 
-    @mock.patch("mbl.build._previous_total", return_value=6000)
+    @mock.patch("mbl.build._previous_totals", return_value={"full": 6000, "lite": 6000})
     def test_build_allow_growth_publishes(self, _prev):
         self.assertEqual(self._build(_fetcher(count=12001), previous="x", allow_growth=True), 0)
         self.assertEqual({p.name for p in self.out.iterdir()}, FILES)
 
+    def test_build_splits_by_variant(self):
+        two = SOURCES_TOML + """
+[[source]]
+name = "extra"
+url = "https://example.invalid/extra"
+format = "plain"
+category = "attack"
+"""
+        self.sources.write_text(two)
+
+        def fetch(sources):
+            main, extra = sources
+            return [SourceResult(main, _nets(2000), 0, None),
+                    SourceResult(extra, [IPv4Network(f"9.{i // 256}.{i % 256}.1/32")
+                                         for i in range(4000)], 0, None)]
+        self.assertEqual(self._build(fetch), 0)
+        lite = (self.out / "blocklist-lite.txt").read_text().splitlines()
+        full = (self.out / "blocklist.txt").read_text().splitlines()
+        self.assertEqual((len(lite), len(full)), (2000, 6000))
+        self.assertTrue(all(line.startswith("1.") for line in lite))
+
+    def test_build_refuses_when_lite_fails(self):
+        two = SOURCES_TOML.replace('variants = ["lite", "full"]\n', "") + """
+[[source]]
+name = "small"
+url = "https://example.invalid/small"
+format = "plain"
+category = "attack"
+variants = ["lite", "full"]
+"""
+        self.sources.write_text(two)
+
+        def fetch(sources):
+            main, small = sources
+            return [SourceResult(main, _nets(6000), 0, None),
+                    SourceResult(small, [IPv4Network(f"9.0.{i // 256}.{i % 256}/32")
+                                         for i in range(500)], 0, None)]
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            code = build(self.sources, self.allow, self.out, None, now=WHEN,
+                         fetcher=fetch, version_path=self.version)
+        self.assertEqual(code, 1)
+        self.assertFalse(self.out.exists())
+        self.assertTrue(err.getvalue().startswith("error: lite:"), err.getvalue())
+
+    @mock.patch("mbl.build._previous_totals", return_value={"full": 6000})
+    def test_first_lite_publish_skips_drop_and_growth(self, _prev):
+        # lite has no previous total: 19000 would exceed 2x of anything small
+        self.assertEqual(self._build(_fetcher(count=12000), previous="x"), 0)
+        self.assertTrue((self.out / "blocklist-lite.txt").exists())
+
+    def _stats(self, payload):
+        resp = io.BytesIO(json.dumps(payload).encode())
+        resp.__enter__ = lambda self=resp: self
+        resp.__exit__ = lambda *a: None
+        return mock.patch("urllib.request.urlopen", return_value=resp)
+
+    def test_previous_full_from_top_level_total(self):
+        with self._stats({"total": 7000}):
+            self.assertEqual(_previous_totals("http://x"), {"full": 7000})
+
+    def test_previous_totals_per_variant(self):
+        with self._stats({"total": 7000, "variants": {"full": {"total": 7001},
+                                                      "lite": {"total": 3000}}}):
+            self.assertEqual(_previous_totals("http://x"), {"full": 7001, "lite": 3000})
 
     def test_build_reads_version(self):
         self.version.write_text("9.8.7\n")

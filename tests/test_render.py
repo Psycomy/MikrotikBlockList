@@ -21,7 +21,7 @@ def _results(nets):
 
 class RenderTest(unittest.TestCase):
     def _write(self, nets, tmp):
-        write_outputs(Path(tmp) / "out", nets, _results(nets), WHEN)
+        write_outputs(Path(tmp) / "out", {"full": nets}, _results(nets), WHEN)
         return Path(tmp) / "out"
 
     def test_router_txt_format(self):
@@ -41,6 +41,36 @@ class RenderTest(unittest.TestCase):
         self.assertIn("entries=2", lines[0])
         self.assertIn("script=0.0.0", lines[0])
         self.assertEqual(lines[-1], "# MBL-END entries=2")
+
+    def test_write_outputs_writes_both_variants(self):
+        full = [IPv4Network("1.10.16.0/20"), IPv4Network("8.8.8.8/32")]
+        lite = [IPv4Network("8.8.8.8/32")]
+        with tempfile.TemporaryDirectory() as tmp:
+            write_outputs(Path(tmp), {"full": full, "lite": lite}, _results(full), WHEN)
+            out = Path(tmp)
+            names = {p.name for p in out.iterdir()}
+            head = (out / "routeros-lite.txt").read_text().splitlines()[0]
+            lite_txt = (out / "blocklist-lite.txt").read_text()
+            rsc = (out / "blocklist.rsc").read_text()
+        self.assertTrue({"routeros-full.txt", "routeros-lite.txt", "blocklist.txt",
+                         "blocklist-lite.txt"} <= names)
+        self.assertIn("variant=lite", head)
+        self.assertEqual(lite_txt, "8.8.8.8\n")
+        self.assertEqual(rsc.count("add list="), 2)
+
+    def test_stats_variants(self):
+        full = [IPv4Network("1.10.16.0/20"), IPv4Network("8.8.8.8/32")]
+        lite = [IPv4Network("8.8.8.8/32")]
+        with tempfile.TemporaryDirectory() as tmp:
+            write_outputs(Path(tmp), {"full": full, "lite": lite}, _results(full), WHEN)
+            stats = json.loads((Path(tmp) / "stats.json").read_text())
+        self.assertEqual(stats["total"], 2)
+        self.assertEqual(stats["variants"], {"full": {"total": 2}, "lite": {"total": 1}})
+
+    def test_write_outputs_requires_full(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(ValueError):
+                write_outputs(Path(tmp), {"lite": []}, [], WHEN)
 
     def test_blocklist_txt_has_no_header(self):
         nets = [IPv4Network("8.8.8.8/32")]
@@ -119,7 +149,7 @@ class RenderTest(unittest.TestCase):
         results = [SourceResult(ok, nets, 0, None),
                    SourceResult(bad, [], 0, "HTTPError: HTTP Error 503: down")]
         with tempfile.TemporaryDirectory() as tmp:
-            write_outputs(Path(tmp), nets, results, WHEN)
+            write_outputs(Path(tmp), {"full": nets}, results, WHEN)
             notice = (Path(tmp) / "NOTICE.md").read_text()
         self.assertIn("MikrotikBlockList", notice)
         self.assertIn("https://github.com/Psycomy/MikrotikBlockList", notice)
@@ -128,18 +158,18 @@ class RenderTest(unittest.TestCase):
         self.assertIn("GPL-3.0", notice)
         self.assertIn("2026-10-19T04:17:00Z", notice)
         rows = [l for l in notice.splitlines() if l.startswith("| ")]
-        self.assertEqual(rows[0], "| source | url | category | license / terms | entries | error |")
+        self.assertEqual(rows[0], "| source | url | category | license / terms | variants | entries | error |")
         self.assertIn("| spamhaus-drop | https://www.spamhaus.org/drop/drop.txt | attack "
-                      "| Spamhaus DROP terms | 2 |  |", rows)
+                      "| Spamhaus DROP terms | full | 2 |  |", rows)
         self.assertIn("| dshield | https://www.dshield.org/block.txt | attack | CC BY-NC-SA "
-                      "| 0 | HTTPError: HTTP Error 503: down |", rows)
+                      "| full | 0 | HTTPError: HTTP Error 503: down |", rows)
 
     def test_notice_escapes_pipes(self):
         src = Source("s", "https://x", "plain", "attack", license_note="a | b")
         with tempfile.TemporaryDirectory() as tmp:
-            write_outputs(Path(tmp), [], [SourceResult(src, [], 0, "x|y")], WHEN)
+            write_outputs(Path(tmp), {"full": []}, [SourceResult(src, [], 0, "x|y")], WHEN)
             notice = (Path(tmp) / "NOTICE.md").read_text()
-        self.assertIn("| s | https://x | attack | a \\| b | 0 | x\\|y |", notice)
+        self.assertIn("| s | https://x | attack | a \\| b | full | 0 | x\\|y |", notice)
 
 
 if __name__ == "__main__":

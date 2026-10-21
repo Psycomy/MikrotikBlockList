@@ -8,29 +8,40 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-from mbl.checks import safety_errors
+from mbl.checks import LIMITS, safety_errors
 from mbl.fetch import USER_AGENT, SourceResult, fetch_all
 from mbl.normalize import normalize
 from mbl.render import write_outputs
-from mbl.sources import load_allowlist, load_sources
+from mbl.sources import VARIANTS, load_allowlist, load_sources
 
 PREVIOUS_TIMEOUT = 15
 
 
-def _previous_total(url: str | None) -> int | None:
+def _previous_totals(url: str | None) -> dict[str, int]:
+    """Previous total per variant; empty when unavailable (checks are skipped)."""
     if not url:
-        return None
+        return {}
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
         with urllib.request.urlopen(request, timeout=PREVIOUS_TIMEOUT) as resp:
-            total = json.load(resp)["total"]
-        if not isinstance(total, int) or isinstance(total, bool):
-            raise ValueError("total is not an integer")
-        return total
+            data = json.load(resp)
+        totals: dict[str, int] = {}
+        variants = data.get("variants")
+        for name in VARIANTS:
+            entry = variants.get(name) if isinstance(variants, dict) else None
+            total = entry.get("total") if isinstance(entry, dict) else None
+            if total is None and name == "full":
+                total = data["total"]  # stats.json from before the variants
+            if total is None:
+                continue
+            if not isinstance(total, int) or isinstance(total, bool):
+                raise ValueError(f"{name} total is not an integer")
+            totals[name] = total
+        return totals
     except Exception as exc:  # network error, 404, malformed JSON...
         print(f"warning: previous stats unavailable ({type(exc).__name__}: {exc}); "
               "skipping drop check", file=sys.stderr)
-        return None
+        return {}
 
 
 def _summary(results: list[SourceResult], total: int) -> tuple[str, str]:
@@ -67,23 +78,30 @@ def build(sources_path: Path, allowlist_path: Path, out_dir: Path,
 
     now = now or datetime.now(timezone.utc)
     results = fetcher(sources)
-    networks = normalize([n for r in results for n in r.networks], allowlist)
-    total = len(networks)
+    variants = {v: normalize([n for r in results if v in r.source.variants
+                              for n in r.networks], allowlist) for v in VARIANTS}
+    total = len(variants["full"])
 
     text, md = _summary(results, total)
     print(text, end="")
+    print("".join(f"total {v}: {len(nets)}\n" for v, nets in variants.items()), end="")
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary_path:
         with open(summary_path, "a", encoding="utf-8") as fh:
             fh.write(md)
 
     failed = [r.source.name for r in results if r.source.required and r.error]
-    errors = safety_errors(total, _previous_total(previous_stats_url), failed,
-                           allow_growth=allow_growth)
+    previous = _previous_totals(previous_stats_url)
+    errors = []
+    for v, nets in variants.items():
+        low, high = LIMITS[v]
+        errors += [f"{v}: {e}" for e in safety_errors(
+            len(nets), previous.get(v), failed, min_total=low, max_total=high,
+            allow_growth=allow_growth)]
     if errors:
         for error in errors:
             print(f"error: {error}", file=sys.stderr)
         return 1
 
-    write_outputs(Path(out_dir), networks, results, now, script_version)
+    write_outputs(Path(out_dir), variants, results, now, script_version)
     return 0

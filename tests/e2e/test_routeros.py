@@ -97,10 +97,12 @@ SCRIPT_VARIANTS = {
 
 
 def _synthetic_list(out_dir: Path) -> None:
-    """LIST_SIZE consecutive global /32s from 45.0.0.0; no real sources."""
+    """LIST_SIZE global /32s from 45.0.0.0 (full) and 2,000 from 46.0.0.0 (lite); no real sources."""
     first = int(IPv4Address("45.0.0.0"))
     networks = [IPv4Network(IPv4Address(first + i)) for i in range(LIST_SIZE)]
-    write_outputs(out_dir, networks, [], datetime.now(timezone.utc))
+    lite_first = int(IPv4Address("46.0.0.0"))
+    lite = [IPv4Network(IPv4Address(lite_first + i)) for i in range(2000)]
+    write_outputs(out_dir, {"full": networks, "lite": lite}, [], datetime.now(timezone.utc))
 
 
 def _local_ip_towards(host: str) -> str:

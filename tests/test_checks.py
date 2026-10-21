@@ -1,9 +1,12 @@
 import unittest
 
-from mbl.checks import safety_errors
+from mbl.checks import LIMITS, safety_errors
 
 
 class SafetyErrorsTest(unittest.TestCase):
+    def test_limits_per_variant(self):
+        self.assertEqual(LIMITS, {"full": (5000, 150000), "lite": (1000, 20000)})
+
     def test_ok(self):
         self.assertEqual(safety_errors(60000, 58000, []), [])
 
