@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 from mbl.__main__ import main
-from mbl.build import _previous_totals, build
+from mbl.build import _previous_stats, _previous_totals, build
 from mbl.fetch import SourceResult
 from mbl.sources import Source
 
@@ -83,12 +83,12 @@ class BuildTest(unittest.TestCase):
     def test_build_unreachable_previous_is_ignored(self):
         self.assertEqual(self._build(_fetcher(), previous="http://127.0.0.1:9/stats.json"), 0)
 
-    @mock.patch("mbl.build._previous_totals", return_value={"full": 6000, "lite": 6000})
+    @mock.patch("mbl.build._previous_stats", return_value=({"full": 6000, "lite": 6000}, {}))
     def test_build_refuses_growth_above_double(self, _prev):
         self.assertEqual(self._build(_fetcher(count=12001), previous="x"), 1)
         self.assertFalse(self.out.exists())
 
-    @mock.patch("mbl.build._previous_totals", return_value={"full": 6000, "lite": 6000})
+    @mock.patch("mbl.build._previous_stats", return_value=({"full": 6000, "lite": 6000}, {}))
     def test_build_allow_growth_publishes(self, _prev):
         self.assertEqual(self._build(_fetcher(count=12001), previous="x", allow_growth=True), 0)
         self.assertEqual({p.name for p in self.out.iterdir()}, FILES)
@@ -138,11 +138,109 @@ variants = ["lite", "full"]
         self.assertFalse(self.out.exists())
         self.assertTrue(err.getvalue().startswith("error: lite:"), err.getvalue())
 
-    @mock.patch("mbl.build._previous_totals", return_value={"full": 6000})
+    @mock.patch("mbl.build._previous_stats", return_value=({"full": 20000}, {}))
     def test_first_lite_publish_skips_drop_and_growth(self, _prev):
-        # lite has no previous total: 19000 would exceed 2x of anything small
-        self.assertEqual(self._build(_fetcher(count=12000), previous="x"), 0)
+        # lite has no previous total; compared against full's 20000, 3000 would be an 85% drop
+        two = SOURCES_TOML.replace('variants = ["lite", "full"]', 'variants = ["full"]') + """
+[[source]]
+name = "small"
+url = "https://example.invalid/small"
+format = "plain"
+category = "attack"
+variants = ["lite", "full"]
+"""
+        self.sources.write_text(two)
+
+        def fetch(sources):
+            main, small = sources
+            return [SourceResult(main, _nets(12000), 0, None),
+                    SourceResult(small, [IPv4Network(f"9.{i // 256}.{i % 256}.1/32")
+                                         for i in range(3000)], 0, None)]
+        self.assertEqual(self._build(fetch, previous="x"), 0)
+        self.assertEqual(len((self.out / "blocklist-lite.txt").read_text().splitlines()), 3000)
+
+    LITE_PAIR = SOURCES_TOML.replace('variants = ["lite", "full"]', 'variants = ["full"]') + """
+[[source]]
+name = "lite-a"
+url = "https://example.invalid/a"
+format = "plain"
+category = "attack"
+variants = ["lite", "full"]
+
+[[source]]
+name = "lite-b"
+url = "https://example.invalid/b"
+format = "plain"
+category = "attack"
+variants = ["lite", "full"]
+"""
+
+    def _lite_drop(self, previous_stats, b_error="boom"):
+        """full 7500 (prev 10500, -29%); lite 1500 (prev 4500, -67%); lite-b failing."""
+        self.sources.write_text(self.LITE_PAIR)
+
+        def fetch(sources):
+            main, a, b = sources
+            return [SourceResult(main, _nets(6000), 0, None),
+                    SourceResult(a, [IPv4Network(f"9.{i // 256}.{i % 256}.1/32")
+                                     for i in range(1500)], 0, None),
+                    SourceResult(b, [], 0, b_error)]
+        err = io.StringIO()
+        with mock.patch("mbl.build._previous_stats", return_value=previous_stats), \
+                contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            code = build(self.sources, self.allow, self.out, "x", now=WHEN,
+                         fetcher=fetch, version_path=self.version)
+        return code, err.getvalue()
+
+    def test_drop_explained_by_failed_optional_source_publishes(self):
+        code, err = self._lite_drop(({"full": 10500, "lite": 4500},
+                                     {"lite-a": 1500, "lite-b": 3000}))
+        self.assertEqual(code, 0, err)
         self.assertTrue((self.out / "blocklist-lite.txt").exists())
+        self.assertIn("lite: drop of 3000 explained by failed sources (lite-b), "
+                      "drop check skipped", err)
+
+    def test_drop_larger_than_explained_refuses(self):
+        code, err = self._lite_drop(({"full": 10500, "lite": 4500},
+                                     {"lite-a": 1500, "lite-b": 2999}))
+        self.assertEqual(code, 1)
+        self.assertFalse(self.out.exists())
+        self.assertIn("error: lite:", err)
+
+    def test_drop_without_failed_sources_refuses(self):
+        code, err = self._lite_drop(({"full": 10500, "lite": 4500},
+                                     {"lite-a": 1500, "lite-b": 3000}), b_error=None)
+        self.assertEqual(code, 1)
+        self.assertFalse(self.out.exists())
+        self.assertIn("error: lite:", err)
+        self.assertNotIn("error: full:", err)
+
+    def test_drop_without_previous_source_entries_refuses(self):
+        code, err = self._lite_drop(({"full": 10500, "lite": 4500}, {}))
+        self.assertEqual(code, 1)
+        self.assertIn("error: lite:", err)
+
+    def test_required_failure_counts_only_for_its_variants(self):
+        two = SOURCES_TOML + """
+[[source]]
+name = "big"
+url = "https://example.invalid/big"
+format = "plain"
+category = "attack"
+required = true
+"""
+        self.sources.write_text(two)
+
+        def fetch(sources):
+            main, big = sources
+            return [SourceResult(main, _nets(6000), 0, None), SourceResult(big, [], 0, "boom")]
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            code = build(self.sources, self.allow, self.out, None, now=WHEN,
+                         fetcher=fetch, version_path=self.version)
+        self.assertEqual(code, 1)
+        self.assertIn("error: full: required sources failed: big", err.getvalue())
+        self.assertNotIn("lite: required", err.getvalue())
 
     def _stats(self, payload):
         resp = io.BytesIO(json.dumps(payload).encode())
@@ -158,6 +256,23 @@ variants = ["lite", "full"]
         with self._stats({"total": 7000, "variants": {"full": {"total": 7001},
                                                       "lite": {"total": 3000}}}):
             self.assertEqual(_previous_totals("http://x"), {"full": 7001, "lite": 3000})
+
+    def test_previous_malformed_total_skips_only_that_variant(self):
+        err = io.StringIO()
+        with self._stats({"total": 7000, "variants": {"full": {"total": 7001},
+                                                      "lite": {"total": "x"}}}), \
+                contextlib.redirect_stderr(err):
+            self.assertEqual(_previous_totals("http://x"), {"full": 7001})
+        self.assertIn("lite", err.getvalue())
+
+    def test_previous_stats_source_entries(self):
+        with self._stats({"total": 7000, "sources": {"a": {"entries": 10}, "b": {"entries": "x"},
+                                                     "c": {}, "d": 5}}):
+            self.assertEqual(_previous_stats("http://x"), ({"full": 7000}, {"a": 10}))
+
+    def test_previous_stats_without_sources(self):
+        with self._stats({"total": 7000}):
+            self.assertEqual(_previous_stats("http://x"), ({"full": 7000}, {}))
 
     def test_build_reads_version(self):
         self.version.write_text("9.8.7\n")
