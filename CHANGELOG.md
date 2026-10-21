@@ -1,0 +1,53 @@
+# Changelog
+
+All notable changes to this project are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
+[Semantic Versioning](https://semver.org/). The version in use is in [`VERSION`](VERSION), and the
+published list carries it as `script=<version>` in its header.
+
+## [3.1.0] - 2026-10-21
+
+### Added
+- Update notice: after a successful load, `mbl-update` compares the installed script version with the
+  one published in the list header and logs a single `warning`
+  (`MBL: script <published> available (installed <installed>) - reinstall: ...`) when the published
+  one is newer. The comparison is numeric per `MAJOR.MINOR.PATCH` (`3.10.0` is newer than `3.9.0`).
+- A published version that is not `MAJOR.MINOR.PATCH` is ignored: no notice and no error. The notice
+  never makes a load fail and nothing read from the file is executed.
+- The router never updates itself; reinstalling stays a manual step.
+- CI check that `VERSION` and the installer version stay in sync.
+- End-to-end cases `test_14b` to `test_14e` for the notice.
+
+## [3.0.0] - 2026-10-21
+
+### Changed
+- Safe ingestion: `mbl-update` no longer uses `/import` on the downloaded list. It reads the file in
+  chunks and validates every line as an IPv4 address or prefix before adding it, so nothing in the file
+  is ever executed. It also checks the header/footer, the entry count and the share of invalid lines
+  (rejected above 1 %); a rejected download keeps the active list.
+- The list is published as plain text, `lists/routeros-full.txt`, together with `VERSION`.
+- The backup of the last good list is `mbl-last.txt` (v2 used `mbl-last.rsc`).
+
+### Added
+- RouterOS end-to-end tests on a disposable CHR (QEMU/KVM) in CI (`routeros-e2e` workflow), including
+  the v2 to v3 upgrade, injection, count mismatch, CRLF and invalid-ratio cases.
+- Optional `mblUrlBase` global to point the installer at another server (testing).
+- `--allow-growth` flag and manual `allow_growth` workflow input to publish after an expected jump.
+
+### Upgrade from v2
+Run the install command again. The installer replaces the v2 updater, the first load removes the old
+`mbl-*.rsc` files (`MBL: removed v2 files`) and the active list is never left empty.
+
+## [2.0.0] - 2026-10-19
+
+### Changed
+- Rewrite of the generator and the RouterOS installer: daily build of an IPv4 blocklist published on the
+  `lists` branch, raw-firewall rules on two alternating lists (`mbl-a`/`mbl-b`), schedulers
+  `mbl-daily` and `mbl-boot`, an allowlist and an uninstaller.
+- Validated on a CHR with RouterOS 7.24.5 (minimum supported: 7.21).
+
+### Later 2.x changes (2026-10-20)
+- Source study applied to `sources.toml` (see `docs/source-study-2026-10-20.md`).
+- Stale-list warning in `mbl-update` (`MBL: list is N days old`) and the build refusing to publish
+  when the total more than doubles.
+- CI moved to Node 24 actions.

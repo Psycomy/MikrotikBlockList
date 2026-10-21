@@ -241,6 +241,10 @@ Los casos comparten un router y corren en orden.
 | `test_12_count_mismatch_rejected` | Cabecera y pie coherentes entre sí pero con más entradas de las que hay (fichero cortado con el pie añadido a mano): rechazado con `count mismatch` (entradas añadidas ≠ `entries`; si la cabecera y el pie no coinciden el motivo es `header/footer mismatch`), lista activa intacta |
 | `test_13_crlf_accepted` | Fichero con `\r\n` y espacios al final: las líneas se aceptan y se cargan todas |
 | `test_14_too_many_invalid_rejected` | Más de un 1 % de líneas inválidas (más de 100 con 10000 entradas; el test añade 200): rechazado con `too many invalid lines`, lista activa intacta |
+| `test_14b_newer_script_notice` | Una versión publicada mayor que la instalada (`script=` de la cabecera): `MBL: script <publicada> available (installed <instalada>) ...` con nivel `warning`, exactamente 1 línea tras la marca y después de `MBL: loaded` |
+| `test_14c_no_notice_when_not_newer` | Versión publicada igual o menor que la instalada: sin aviso |
+| `test_14d_bad_script_version_ignored` | Versión publicada con basura (`3.1.0;/system reboot`, `abc`, vacía): sin aviso, la carga termina bien y nada se ejecuta |
+| `test_14e_numeric_comparison` | Comparación numérica: `3.10.0` frente a `3.9.0` sí avisa |
 | `test_15_final_uninstall` | Siempre el último: deja el router limpio |
 
 ### Rendimiento de la v3 (2026-10-21)
