@@ -1,5 +1,5 @@
 import unittest
-from ipaddress import IPv4Network
+from ipaddress import IPv4Network, ip_network
 from pathlib import Path
 
 from mbl.parsers import ParseResult, parse
@@ -42,7 +42,8 @@ class ParserTests(unittest.TestCase):
         text = "﻿1.1.1.1\r\n  2.2.2.2  \n1.2.3.4/24\n010.1.1.1\nfoo\n3.3.3.3 # c\n::1\n"
         result = parse("plain", text)
         self.assertEqual(
-            result.networks, _nets("1.1.1.1/32", "2.2.2.2/32", "1.2.3.0/24", "3.3.3.3/32")
+            result.networks,
+            [*_nets("1.1.1.1/32", "2.2.2.2/32", "1.2.3.0/24", "3.3.3.3/32"), ip_network("::1/128")],
         )
         self.assertEqual(result.invalid, 2)
 
@@ -81,6 +82,33 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(len(result.networks), 6)
         self.assertIn(IPv4Network("89.37.172.132/32"), result.networks)
         self.assertEqual(result.invalid, 0)
+
+    def test_plain_accepts_ipv6(self):
+        result = parse("plain", "2001:db8::1\n2a00:1450::/32\n1.2.3.4\n")
+        self.assertEqual(
+            result.networks,
+            [ip_network("2001:db8::1/128"), ip_network("2a00:1450::/32"), ip_network("1.2.3.4/32")],
+        )
+        self.assertEqual(result.invalid, 0)
+
+    def test_threatfox_ipv6_in_brackets(self):
+        text = '"t", "1", "[2a00::1]:443", "ip:port", "botnet_cc"\n"t", "2", "1.2.3.4:80", "ip:port", "x"\n'
+        result = parse("threatfox_csv", text)
+        self.assertEqual(result.networks, [ip_network("2a00::1/128"), ip_network("1.2.3.4/32")])
+        self.assertEqual(result.invalid, 0)
+
+    def test_jsonl_cidr(self):
+        result = parse("jsonl_cidr", _fixture("spamhaus_v6.jsonl"))
+        self.assertEqual(
+            result.networks,
+            [ip_network("2001:678:254::/48"), ip_network("2a0b:7080::/32"), ip_network("2602:fed2:1000::/36")],
+        )
+        self.assertEqual(result.invalid, 0)
+
+    def test_jsonl_cidr_bad_lines_invalid(self):
+        result = parse("jsonl_cidr", 'not json\n{"cidr":"zzz"}\n{"cidr":"2a00::/32"}\n')
+        self.assertEqual(result.networks, [ip_network("2a00::/32")])
+        self.assertEqual(result.invalid, 2)
 
     def test_html_page_yields_nothing(self):
         result = parse("plain", "<html><body>Just a moment...</body></html>")

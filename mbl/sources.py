@@ -1,10 +1,10 @@
 """Source catalog and local allowlist loading."""
 import tomllib
 from dataclasses import dataclass
-from ipaddress import IPv4Network
+from ipaddress import IPv4Network, IPv6Network, ip_network
 from pathlib import Path
 
-FORMATS = frozenset({"plain", "dshield", "threatfox_csv", "c2intel_csv", "csv"})
+FORMATS = frozenset({"plain", "dshield", "threatfox_csv", "c2intel_csv", "csv", "jsonl_cidr"})
 CATEGORIES = frozenset({"attack", "c2"})
 VARIANTS = ("full", "lite")
 
@@ -49,20 +49,20 @@ def load_sources(path: Path) -> list[Source]:
     return result
 
 
-def load_allowlist(path: Path) -> list[IPv4Network]:
-    """Parse one IPv4 address or CIDR per line.
+def load_allowlist(path: Path) -> list[IPv4Network | IPv6Network]:
+    """Parse one IPv4 or IPv6 address or CIDR per line.
 
     Blank lines and comments (whole-line or after the entry, starting with #)
     are ignored. Raise ValueError naming the line number for an invalid entry.
     """
-    networks: list[IPv4Network] = []
+    networks: list[IPv4Network | IPv6Network] = []
     lines = path.read_text(encoding="utf-8").splitlines()
     for number, line in enumerate(lines, start=1):
         entry = line.split("#", 1)[0].strip()
         if not entry:
             continue
         try:
-            networks.append(IPv4Network(entry, strict=False))
+            networks.append(ip_network(entry, strict=False))
         except ValueError as exc:
             raise ValueError(f"{path}: line {number}: invalid entry {entry!r} ({exc})") from exc
     return networks

@@ -24,6 +24,14 @@ license_note = "Free under Spamhaus DROP terms; no explicit redistribution grant
 variants = ["lite", "full"]
 
 [[source]]
+name = "spamhaus-drop-v6"
+url = "https://www.spamhaus.org/drop/drop_v6.json"
+format = "jsonl_cidr"
+category = "attack"
+license_note = "Free under Spamhaus DROP terms; no explicit redistribution grant - home use"
+variants = ["lite", "full"]
+
+[[source]]
 name = "et-compromised"
 url = "https://rules.emergingthreats.net/blockrules/compromised-ips.txt"
 format = "plain"

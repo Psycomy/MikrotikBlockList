@@ -1,4 +1,4 @@
-# Networks that must never be blocked (one IPv4 address or CIDR per line).
+# Networks that must never be blocked (one IPv4 or IPv6 address or CIDR per line).
 # Lines starting with # and blank lines are ignored; text after # is a comment.
 
 # GitHub (Fastly) range serving raw.githubusercontent.com: the router downloads
@@ -36,3 +36,26 @@
 104.24.0.0/14
 172.64.0.0/13
 131.0.72.0/22
+
+# Cloudflare IPv6 ranges (https://www.cloudflare.com/ips-v6): shared CDN/proxy and WARP
+# egress addresses; blocking them would break legitimate sites, same as the IPv4 ranges.
+2400:cb00::/32
+2606:4700::/32
+2803:f800::/32
+2405:b500::/32
+2405:8100::/32
+2a06:98c0::/29
+2c0f:f248::/32
+
+# GitHub IPv6 range serving raw.githubusercontent.com: the router downloads the
+# blocklist from here, so blocking it would stop all future updates.
+2606:50c0::/32
+
+# Google public DNS resolver, IPv6 (primary): common upstream DNS, must stay reachable.
+2001:4860:4860::8888
+# Google public DNS resolver, IPv6 (secondary): common upstream DNS, must stay reachable.
+2001:4860:4860::8844
+# Quad9 public DNS resolver, IPv6 (primary): common upstream DNS, must stay reachable.
+2620:fe::fe
+# Quad9 public DNS resolver, IPv6 (secondary): common upstream DNS, must stay reachable.
+2620:fe::9
