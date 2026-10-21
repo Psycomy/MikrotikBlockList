@@ -106,6 +106,13 @@ class BuildTest(unittest.TestCase):
         self.version.write_text("  \n")
         self.assertEqual(self._build(_fetcher()), 2)
 
+    def test_build_malformed_version_returns_2(self):
+        for bad in ("3.0", "v3.0.0", "3.0.0 x=1", "3.0.0\nentries=5", "3.0.0-rc1"):
+            with self.subTest(version=bad):
+                self.version.write_text(bad + "\n")
+                self.assertEqual(self._build(_fetcher()), 2)
+                self.assertFalse(self.out.exists())
+
 
 class MainTest(unittest.TestCase):
     @mock.patch("mbl.__main__.build", return_value=0)

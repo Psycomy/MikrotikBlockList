@@ -1,6 +1,7 @@
 """Build pipeline: fetch, normalize, check and write the blocklist."""
 import json
 import os
+import re
 import sys
 import tomllib
 import urllib.request
@@ -58,6 +59,8 @@ def build(sources_path: Path, allowlist_path: Path, out_dir: Path,
         script_version = Path(version_path).read_text(encoding="utf-8").strip()
         if not script_version:
             raise ValueError(f"{version_path} is empty")
+        if not re.fullmatch(r"\d+\.\d+\.\d+", script_version, re.ASCII):
+            raise ValueError(f"{version_path} is not MAJOR.MINOR.PATCH: {script_version!r}")
     except (ValueError, TypeError, tomllib.TOMLDecodeError, OSError) as exc:
         print(f"configuration error: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 2
