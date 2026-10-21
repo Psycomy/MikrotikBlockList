@@ -250,7 +250,12 @@ Los casos comparten un router y corren en orden.
 | `test_14h_invalid_variant_rejected` | `mblVariant "mini"`: el instalador falla con `invalid mblVariant` antes de cambiar nada (6 reglas `MBL:`, misma lista activa y mismas entradas, ninguna petición al servidor, `mbl-update` sigue con `lite`) |
 | `test_14i_variant_mismatch_rejected` | El router en `lite` recibe una cabecera `variant=full`: rechazado con `bad header` y la lista activa no cambia |
 | `test_14j_back_to_full` | `mblVariant "full"` vuelve a `full`: descarga `/routeros-full.txt`, `LIST_SIZE` entradas y `mbl-update` apunta a `routeros-full.txt` |
-| `test_15_final_uninstall` | Siempre el último: deja el router limpio |
+| `test_14k_no_ipv6_by_default` | Sin `mblIpv6` no existe ningún objeto IPv6 de MBL (ni reglas, ni entradas, ni ficheros), no se pide ninguna lista IPv6 y el mensaje final termina en `ipv6 no` |
+| `test_14l_install_ipv6` | `mblIpv6 true`: descarga `/routeros6-full.txt`, 6 reglas `MBL:` en `/ipv6 firewall raw`, `LIST6_SIZE` (300) entradas en `mbl6-a`/`mbl6-b`, `MBL: loaded N ipv6 entries into <lista>` y mensaje final `ipv6 yes`; IPv4 intacto; reinstalar con `mblIpv6 ""` conserva IPv6 |
+| `test_14m_ipv6_line_validation` | Fichero IPv6 con líneas inválidas (IPv4, `::/0`, prefijo `/129`, basura): no se convierten en entradas y se cargan solo las válidas (`IPV6_VALIDATION_SIZE`, 600) |
+| `test_14n_ipv6_failure_never_touches_ipv4` | Lista IPv6 caída (404) o truncada: IPv4 carga y conmuta con normalidad (6 reglas, `LIST_SIZE` entradas), la lista IPv6 activa no cambia, queda un log `MBL: ipv6 ...` y el lock se libera |
+| `test_14o_disable_ipv6_cleans_up` | `mblIpv6 false` al reinstalar: borra reglas, listas y ficheros IPv6 de MBL, IPv4 intacto, mensaje `ipv6 no` y las actualizaciones siguientes no piden la lista IPv6 |
+| `test_15_final_uninstall` | Siempre el último: instala con IPv6 y desinstala; deja el router limpio en las dos familias |
 
 ### Rendimiento de la v3 (2026-10-21)
 

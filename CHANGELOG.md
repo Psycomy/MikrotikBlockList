@@ -5,6 +5,38 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/). The version in use is in [`VERSION`](VERSION), and the
 published list carries it as `script=<version>` in its header.
 
+## [3.3.0] - 2026-10-21
+
+### Added
+- Optional IPv6, off by default. New source `spamhaus-drop-v6` (format `jsonl_cidr`, `full` and `lite`).
+  IPv6 sources today: Spamhaus DROPv6 (91 networks), blocklist.de (about 523), Turris (49) and
+  ThreatCluster (1): 648 IPv6 entries in `full`, 86 in `lite`.
+- `normalize6`: drops non-global IPv6 (ULA, link-local, documentation, multicast, `::/8`,
+  IPv4-mapped, NAT64, 6to4, Teredo) and anything broader than /19, subtracts the IPv6 allowlist
+  (Cloudflare, GitHub's `2606:50c0::/32`, public DNS) and aggregates.
+- New published files: `routeros6-full.txt`, `routeros6-lite.txt`, `blocklist6.txt`,
+  `blocklist6-lite.txt` (header `family=ipv6`; `/128` written without mask). IPv6 limits: `full`
+  50 to 20,000, `lite` 20 to 5,000, with the 50% drop and 2x growth checks.
+- Best effort: if an IPv6 variant fails its checks, no IPv6 file is published that day, with a
+  warning on stderr and in the step summary; IPv4 is still published and the exit code stays 0.
+  `stats.json` gains `ipv6` (`published`, `variants.<v>.total`) and per-source `entries6`;
+  `entries` now counts IPv4 only.
+- Installer: `:global mblIpv6 true; ` before the one-liner (combinable with `mblVariant`) creates
+  `mbl6-a`, `mbl6-b`, `mbl6-allow`, six `MBL:` rules in `/ipv6 firewall raw` and `mbl6-last.txt`.
+  With the global empty the installed choice is kept; `false` removes every MBL IPv6 object (your
+  own `mbl6-allow` entries are kept); any other value stops with `:error` before changing anything.
+  The uninstaller removes both families.
+- `mbl-update` processes `routeros6-<variant>.txt` after the IPv4 update (lines validated with
+  `:toip6` and a prefix from 19 to 128, header `family=ipv6`, at least 200 bytes and 50/20
+  entries). An IPv6 failure logs `MBL: ipv6 ...` and never touches IPv4 lists, rules or files.
+- Final message: `MBL: installed (script 3.3.0, variant <v>, ipv6 <yes|no>)`.
+- End-to-end cases `test_14k` to `test_14o`.
+
+### Upgrade from 3.2.0
+Routers on 3.2.0 will log the newer-script notice and can reinstall with the install command. They
+keep their variant and stay IPv4-only unless `:global mblIpv6 true; ` is set first. The global
+persists until reboot, so set it explicitly (or to `""`) when reinstalling in the same session.
+
 ## [3.2.0] - 2026-10-21
 
 ### Added
