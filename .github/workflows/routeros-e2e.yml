@@ -40,7 +40,7 @@ jobs:
           ls -l /dev/kvm
 
       - name: Install QEMU and tools
-        run: sudo apt-get install -y qemu-system-x86 qemu-utils openssl unzip
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 qemu-utils openssl unzip
 
       - name: Resolve CHR version
         id: chr
@@ -52,6 +52,10 @@ jobs:
             version=$(python -c 'from tests.e2e.harness import latest_stable; print(latest_stable())')
             sha=""
           elif [ -n "$INPUT_VERSION" ]; then
+            if ! printf '%s' "$INPUT_VERSION" | grep -Eq '^[0-9]+(\.[0-9]+)+([a-z]+[0-9]+)?$'; then
+              echo "::error::invalid chr_version: $INPUT_VERSION"
+              exit 1
+            fi
             version="$INPUT_VERSION"
             sha=""
           else

@@ -78,7 +78,10 @@ class RouterOsTest(unittest.TestCase):
             )
         tmp = tempfile.TemporaryDirectory(prefix="mbl-e2e-")
         cls.addClassCleanup(tmp.cleanup)
+        # Registered before booting so boot failures still keep the VM logs
+        # (LIFO: runs before tmp.cleanup).
         tmpdir = Path(tmp.name)
+        cls.addClassCleanup(cls._save_vm_logs, tmpdir / "vm")
 
         served = tmpdir / "served"
         _synthetic_list(served)
@@ -110,7 +113,6 @@ class RouterOsTest(unittest.TestCase):
                          or Path(tempfile.gettempdir()) / "mbl-e2e-cache")
             image = ensure_image(version, sha256, cache)
             cls.chr = Chr.boot(image, tmpdir / "vm")
-            cls.addClassCleanup(cls._save_vm_logs, tmpdir / "vm")
             cls.addClassCleanup(cls.chr.stop)
         cls.addClassCleanup(cls._save_router_log)
 

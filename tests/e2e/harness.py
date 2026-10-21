@@ -216,7 +216,7 @@ class _TeeSocket:
         return getattr(self._sock, name)
 
 
-def _expect(sock: socket.socket, pattern: bytes, timeout: float) -> bytes:
+def _expect(sock: "socket.socket | _TeeSocket", pattern: bytes, timeout: float) -> bytes:
     """Read from `sock` until regex `pattern` matches; return everything read."""
     deadline = time.monotonic() + timeout
     buf = b""
@@ -240,7 +240,7 @@ class Chr:
         self.user, self.host, self.port, self.key = user, host, port, key
         self.password: str | None = None
         self._proc: subprocess.Popen | None = None
-        self._sock: socket.socket | None = None
+        self._sock: socket.socket | _TeeSocket | None = None
         self._sockdir: str | None = None
 
     # -- constructors -------------------------------------------------------
