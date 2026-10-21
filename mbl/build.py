@@ -8,6 +8,7 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
+from mbl.cdn import DEFAULT_SNAPSHOT, CdnResult, fetch_cdn
 from mbl.checks import LIMITS, LIMITS6, MAX_DROP, safety_errors
 from mbl.fetch import USER_AGENT, SourceResult, fetch_all
 from mbl.normalize import normalize, normalize6
@@ -15,6 +16,7 @@ from mbl.render import ipv6_files, write_outputs
 from mbl.sources import VARIANTS, load_allowlist, load_sources
 
 PREVIOUS_TIMEOUT = 15
+MAX_ALLOWLIST_REMOVAL = 0.10
 IPV6_PREFIX = "ipv6:"
 
 
@@ -81,6 +83,21 @@ def _previous_totals(url: str | None) -> dict[str, int]:
     return _previous_stats(url)[0]
 
 
+def _addresses(networks) -> int:
+    return sum(n.num_addresses for n in networks)
+
+
+def _allowlist_removal(nets, normalizer, allowlist) -> tuple[list, str | None]:
+    """Normalize nets with the allowlist; also return an error if it removes over 10 %."""
+    kept = normalizer(nets, allowlist)
+    before = _addresses(normalizer(nets, []))
+    removed = before - _addresses(kept)
+    if before and removed > before * MAX_ALLOWLIST_REMOVAL:
+        return kept, (f"allowlist removes {removed} of {before} addresses "
+                      f"({removed / before:.1%}, limit {MAX_ALLOWLIST_REMOVAL:.0%})")
+    return kept, None
+
+
 def _summary(results: list[SourceResult], total: int) -> tuple[str, str]:
     rows = [(r.source.name, r.source.category, str(sum(n.version == 4 for n in r.networks)),
              str(sum(n.version == 6 for n in r.networks)), str(r.invalid),
@@ -100,7 +117,8 @@ def _summary(results: list[SourceResult], total: int) -> tuple[str, str]:
 def build(sources_path: Path, allowlist_path: Path, out_dir: Path,
           previous_stats_url: str | None, now: datetime | None = None,
           fetcher=fetch_all, allow_growth: bool = False,
-          version_path: Path = Path("VERSION")) -> int:
+          version_path: Path = Path("VERSION"), cdn_fetcher=None,
+          cdn_snapshot: Path = DEFAULT_SNAPSHOT) -> int:
     """Return 0 on success, 1 if safety checks fail, 2 on configuration errors."""
     try:
         sources = load_sources(Path(sources_path))
@@ -116,8 +134,16 @@ def build(sources_path: Path, allowlist_path: Path, out_dir: Path,
 
     now = now or datetime.now(timezone.utc)
     results = fetcher(sources)
-    variants = {v: normalize([n for r in results if v in r.source.variants
-                              for n in r.networks], allowlist) for v in VARIANTS}
+    cdn: CdnResult = (cdn_fetcher or fetch_cdn)(Path(cdn_snapshot))
+    allowlist = [*allowlist, *cdn.networks]
+    variants, cap_errors = {}, []
+    for v in VARIANTS:
+        nets = [n for r in results if v in r.source.variants for n in r.networks]
+        if v == "full":
+            variants[v], error = _allowlist_removal(nets, normalize, allowlist)
+            cap_errors += [f"{v}: {error}"] if error else []
+        else:
+            variants[v] = normalize(nets, allowlist)
     total = len(variants["full"])
 
     text, md = _summary(results, total)
@@ -127,6 +153,9 @@ def build(sources_path: Path, allowlist_path: Path, out_dir: Path,
     if summary_path:
         with open(summary_path, "a", encoding="utf-8") as fh:
             fh.write(md)
+            if cdn.warnings:
+                fh.write("\n**Warning: CDN allowlist**\n\n"
+                         + "".join(f"- {w}\n" for w in cdn.warnings))
 
     previous, previous_entries = _previous_stats(previous_stats_url)
 
@@ -145,7 +174,7 @@ def build(sources_path: Path, allowlist_path: Path, out_dir: Path,
             len(nets), prev, failed, min_total=low, max_total=high,
             allow_growth=allow_growth, explained_drop=explained)]
 
-    errors = []
+    errors = list(cap_errors)
     for v, nets in variants.items():
         errors += check(v, nets, LIMITS)
     if errors:
@@ -157,8 +186,14 @@ def build(sources_path: Path, allowlist_path: Path, out_dir: Path,
     # withholds all IPv6 files, never fails the build nor blocks the IPv4 files.
     variants6, files6, errors6 = None, None, []
     try:
-        variants6 = {v: normalize6([n for r in results if v in r.source.variants
-                                    for n in r.networks], allowlist) for v in VARIANTS}
+        variants6 = {}
+        for v in VARIANTS:
+            nets6 = [n for r in results if v in r.source.variants for n in r.networks]
+            if v == "full":
+                variants6[v], error = _allowlist_removal(nets6, normalize6, allowlist)
+                errors6 += [f"ipv6 {v}: {error}"] if error else []
+            else:
+                variants6[v] = normalize6(nets6, allowlist)
         print("".join(f"total ipv6 {v}: {len(nets)}\n" for v, nets in variants6.items()),
               end="")
         for v, nets in variants6.items():
@@ -180,5 +215,5 @@ def build(sources_path: Path, allowlist_path: Path, out_dir: Path,
     # next build still compares against that baseline, not against today's.
     baseline6 = {v: previous[IPV6_PREFIX + v] for v in VARIANTS if IPV6_PREFIX + v in previous}
     write_outputs(Path(out_dir), variants, results, now, script_version, variants6,
-                  ipv6_baseline=baseline6, files6=files6)
+                  ipv6_baseline=baseline6, files6=files6, cdn_info=cdn.info)
     return 0

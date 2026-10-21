@@ -10,6 +10,7 @@ from unittest import mock
 
 from mbl.__main__ import main
 from mbl.build import _previous_stats, _previous_totals, build
+from mbl.cdn import CdnResult
 from mbl.fetch import SourceResult
 from mbl.sources import Source
 
@@ -26,6 +27,16 @@ variants = ["lite", "full"]
 FILES = {"blocklist.rsc", "blocklist.txt", "stats.json",
          "badge-entries.json", "badge-updated.json", "NOTICE.md", "routeros-full.txt",
          "routeros-lite.txt", "blocklist-lite.txt"}
+
+
+NO_CDN = CdnResult([], {})
+
+
+def setUpModule():
+    # Builds never touch the network for the CDN lists unless a test passes its own.
+    patcher = mock.patch("mbl.build.fetch_cdn", lambda snapshot: NO_CDN)
+    patcher.start()
+    unittest.addModuleCleanup(patcher.stop)
 
 
 def _nets(count):
@@ -63,7 +74,7 @@ def _fetcher6(count6=100, count=6000):
     return fetch
 
 
-class BuildTest(unittest.TestCase):
+class BuildBase(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -82,6 +93,8 @@ class BuildTest(unittest.TestCase):
             return build(sources or self.sources, self.allow, self.out, previous,
                          now=WHEN, fetcher=fetcher, **kwargs)
 
+
+class BuildTest(BuildBase):
     def test_build_writes_outputs(self):
         self.assertEqual(self._build(_fetcher()), 0)
         self.assertEqual({p.name for p in self.out.iterdir()}, FILES)
@@ -507,6 +520,62 @@ class MainTest(unittest.TestCase):
         self.assertEqual(build_mock.call_args.kwargs["version_path"], Path("VERSION"))
         main(["build", "--version-file", "x/V"])
         self.assertEqual(build_mock.call_args.kwargs["version_path"], Path("x/V"))
+
+
+class CdnAllowlistTest(BuildBase):
+    def _cdn_build(self, fetcher, result, **kwargs):
+        return self._build(fetcher, cdn_fetcher=lambda snapshot: result, **kwargs)
+
+    def test_allowlist_cap_fails_build(self):
+        # 1.0.0.0/14 covers 1024 of the 9000 /32 entries: 11.4 %
+        self.allow.write_text("1.0.0.0/14\n")
+        self.assertEqual(self._build(_fetcher(9000)), 1)
+        self.assertFalse(self.out.exists())
+
+    def test_allowlist_under_cap_builds(self):
+        self.allow.write_text("1.0.0.0/15\n")  # 512 of 9000: 5.7 %
+        self.assertEqual(self._build(_fetcher(9000)), 0)
+
+    def test_cdn_networks_cap_fails_build(self):
+        result = CdnResult([IPv4Network("1.0.0.0/14")], {})
+        self.assertEqual(self._cdn_build(_fetcher(9000), result), 1)
+
+    def test_cdn_networks_are_subtracted(self):
+        result = CdnResult([IPv4Network("1.0.0.0/15"), IPv6Network("2a00:1::/32")], {})
+        self.assertEqual(self._cdn_build(_fetcher(9000), result), 0)
+        lines = (self.out / "blocklist.txt").read_text().splitlines()
+        self.assertNotIn("1.0.0.1", lines)
+        self.assertNotIn("1.1.255.1", lines)
+        self.assertIn("1.2.0.1", lines)
+
+    def test_allowlist_cap_ipv6_withholds(self):
+        self.sources.write_text(SOURCES6_TOML)
+        self.allow.write_text("".join(f"2a00:{i:x}::1\n" for i in range(1, 12)))  # 11 of 100
+        self.assertEqual(self._build(_fetcher6(count6=100)), 0)
+        self.assertEqual({p.name for p in self.out.iterdir()}, FILES)
+        stats = json.loads((self.out / "stats.json").read_text())
+        self.assertFalse(stats["ipv6"]["published"])
+
+    def test_allowlist_ipv6_under_cap_publishes(self):
+        self.sources.write_text(SOURCES6_TOML)
+        self.allow.write_text("".join(f"2a00:{i:x}::1\n" for i in range(1, 6)))  # 5 of 100
+        self.assertEqual(self._build(_fetcher6(count6=100)), 0)
+        self.assertEqual({p.name for p in self.out.iterdir()}, FILES | FILES6)
+
+    def test_stats_cdn_allowlist(self):
+        info = {"cloudflare": {"source": "live", "prefixes4": 15, "prefixes6": 7},
+                "fastly": {"source": "snapshot", "prefixes4": 21, "prefixes6": 3},
+                "cloudfront": {"source": "missing", "prefixes4": 0, "prefixes6": 0}}
+        self.assertEqual(self._cdn_build(_fetcher(), CdnResult([], info)), 0)
+        stats = json.loads((self.out / "stats.json").read_text())
+        self.assertEqual(stats["cdn_allowlist"], info)
+
+    def test_cdn_warnings_go_to_step_summary(self):
+        summary = self.tmp / "summary.md"
+        result = CdnResult([], {}, ["cloudflare: using snapshot (boom)"])
+        with mock.patch.dict("os.environ", {"GITHUB_STEP_SUMMARY": str(summary)}):
+            self.assertEqual(self._cdn_build(_fetcher(), result), 0)
+        self.assertIn("cloudflare: using snapshot (boom)", summary.read_text())
 
 
 if __name__ == "__main__":

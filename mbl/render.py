@@ -98,6 +98,7 @@ def write_outputs(
     variants6: dict[str, list[IPv6Network]] | None = None,
     ipv6_baseline: dict[str, int] | None = None,
     files6: dict[str, str] | None = None,
+    cdn_info: dict[str, dict] | None = None,
 ) -> None:
     """Write every published file; the "full" variant is mandatory.
 
@@ -129,6 +130,7 @@ def write_outputs(
             "published": variants6 is not None,
             "variants": {v: {"total": n} for v, n in totals6.items()},
         },
+        "cdn_allowlist": cdn_info or {},
         "sources": {
             r.source.name: {
                 "category": r.source.category,
