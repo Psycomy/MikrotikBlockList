@@ -757,6 +757,7 @@ class RouterOsTest(unittest.TestCase):
         self.assertEqual(self.requests6(), [])
         self.assertEqual(self.mbl6_objects(), {"rules": 0, "entries": 0, "files": 0})
         self.assertEqual(self.count6("mbl6-a") + self.count6("mbl6-b"), 0)
+        self.assertIn(':local ipv6 "no"', self.update_source())
         self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
         self.assertEqual(self.count(self.active_list()), LIST_SIZE)
         self.assertIn(f"MBL: installed (script {self.installed_version}, variant full, ipv6 no)",
@@ -770,6 +771,19 @@ class RouterOsTest(unittest.TestCase):
         self.assertEqual(self.mbl6_objects(), {"rules": 0, "entries": 0, "files": 0})
 
     def test_14l_install_ipv6(self):
+        # a failed first IPv6 load still installs IPv4, and the message says so
+        self.server.fail_paths = {"/routeros6-full.txt"}
+        try:
+            token = self.mark()
+            out = self.install_ipv6("true")
+        finally:
+            self.server.fail_paths = set()
+        note = (f"MBL: installed (script {self.installed_version}, variant full, "
+                "ipv6 yes - first ipv6 load failed, see log)")
+        self.assertIn(note, out)
+        self.assertIn(note, self.log_after(token))
+        self.assertEqual(self.count(self.active_list()), LIST_SIZE)
+        self.assertEqual(self.count6("mbl6-a") + self.count6("mbl6-b"), 0)
         self.server.requests.clear()
         token = self.mark()
         out = self.install_ipv6("true")
@@ -783,7 +797,8 @@ class RouterOsTest(unittest.TestCase):
         self.assertIn(f"loaded {LIST6_SIZE} ipv6 entries into {active6}", log)
         self.assertIn(f"MBL: installed (script {self.installed_version}, variant full, ipv6 yes)",
                       log)
-        self.assertIn("ipv6 yes", out)
+        self.assertIn("ipv6 yes)", out)
+        self.assertNotIn("first ipv6 load failed", out)
         self.assertEqual(self.count(self.active_list()), LIST_SIZE)
         self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
         self.assertIn(':local ipv6 "yes"', self.update_source())
@@ -819,12 +834,15 @@ class RouterOsTest(unittest.TestCase):
             self.set_update_path(f"/{name}", "/routeros6-full.txt")
 
     def test_14n_ipv6_failure_never_touches_ipv4(self):
-        for name in ("routeros6-full-404.txt", "routeros6-full-truncated.txt"):
+        cases = {"routeros6-full-404.txt": "MBL: ipv6 download failed",
+                 "routeros6-full-truncated.txt": "rejected"}
+        for name, reason in cases.items():
             with self.subTest(name):
                 self.set_update_path("/routeros6-full.txt", f"/{name}")
                 try:
                     old4, old6 = self.active_list(), self.active_list6()
                     n6 = self.count6(old6)
+                    self.assertGreater(n6, 0)
                     token = self.mark()
                     self.server.requests.clear()
                     self.update()
@@ -838,12 +856,17 @@ class RouterOsTest(unittest.TestCase):
                     log = self.log_after(token)
                     self.assertIn(f"MBL: loaded {LIST_SIZE} entries", log)
                     self.assertTrue(any("MBL: ipv6" in ln for ln in log.splitlines()), log)
+                    self.assertTrue(any(reason in ln and ("ipv6" in ln or "mbl6" in ln)
+                                        for ln in log.splitlines()), log)
                     self.assertFalse(self.running())
                 finally:
                     self.set_update_path(f"/{name}", "/routeros6-full.txt")
 
     def test_14o_disable_ipv6_cleans_up(self):
-        self.assertGreater(self.mbl6_objects()["entries"], 0)  # something to clean up
+        before = self.mbl6_objects()  # something to clean up
+        self.assertGreater(before["rules"], 0, before)
+        self.assertGreater(before["entries"], 0, before)
+        self.assertGreater(before["files"], 0, before)
         self.server.requests.clear()
         token = self.mark()
         out = self.install_ipv6("false")
@@ -855,7 +878,9 @@ class RouterOsTest(unittest.TestCase):
         self.assertIn(f"MBL: installed (script {self.installed_version}, variant full, ipv6 no)",
                       self.log_after(token))
         self.assertIn("ipv6 no", out)
-        self.assertIn("routeros-full.txt", self.update_source())
+        source = self.update_source()
+        self.assertIn("routeros-full.txt", source)
+        self.assertIn(':local ipv6 "no"', source)
 
     def test_15_final_uninstall(self):
         # uninstall removes both families: give IPv6 something to remove first

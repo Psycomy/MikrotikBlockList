@@ -225,6 +225,7 @@
 :global mblRunning
 :global mblBoot
 :global mblLastOk
+:global mblLastOk6
 # Rename file $1 to $2 (/file set name=), falling back to copy + remove.
 # Run through :parse so a release lacking a command fails at run time,
 # not when the whole script is parsed. Returns true on success.
@@ -314,6 +315,7 @@
 } else={
   :set mblRunning true
   :set mblLastOk false
+  :set mblLastOk6 false
   # IPv4 first, then IPv6 when it is on. Each family runs in its own :do, so
   # an IPv6 failure can never change the IPv4 result (mblLastOk) or objects.
   :foreach fam in={"ipv4";"ipv6"} do={
@@ -321,7 +323,10 @@
     # "" for IPv4 (its messages are unchanged), "ipv6 " for IPv6
     :local fl ""
     :if ($v6) do={ :set fl "ipv6 " }
-    :if (!$v6 || $ipv6 = "yes") do={
+    # The /ip and /ipv6 commands below are spelled out in two branches on
+    # $v6: a menu path cannot come from a variable without :parse, which
+    # would turn every command into an unchecked string.
+    :if (!$v6 || ($ipv6 = "yes")) do={
       # Every failure path logs, cleans up and raises :error, caught below so
       # that the lock is always released.
       :do {
@@ -607,7 +612,7 @@
           }
         }
 
-        :if (!$v6) do={ :set mblLastOk true }
+        :if ($v6) do={ :set mblLastOk6 true } else={ :set mblLastOk true }
         :log info ("MBL: loaded $n " . $fl . "entries into $target (list generated $gen)")
 
         # The notices below are IPv4 only: v2 never had IPv6 files, and the
@@ -721,7 +726,9 @@ $mblInject "@MBL_IPV6@" $mblV6
 # -------------------------------------------------------- 8. first load
 :global mblRunning
 :global mblLastOk
+:global mblLastOk6
 :set mblLastOk false
+:set mblLastOk6 false
 :if ($mblRunning = true) do={
   :put "MBL: WARNING first load skipped: another mbl-update holds the lock. If none is running, clear it with  :global mblRunning false  and run  /system script run mbl-update"
   :log warning "MBL: first load skipped, lock mblRunning is set (clear with :global mblRunning false)"
@@ -730,8 +737,11 @@ $mblInject "@MBL_IPV6@" $mblV6
 }
 /file remove [find where name="install.rsc" or name="flash/install.rsc"]
 :if ($mblLastOk = true) do={
-  :put "MBL: installed (script $mblScriptVersion, variant $mblVar, ipv6 $mblV6)"
-  :log info "MBL: installed (script $mblScriptVersion, variant $mblVar, ipv6 $mblV6)"
+  # IPv6 is best effort: IPv4 is installed even when the first IPv6 load failed.
+  :local note ""
+  :if (($mblV6 = "yes") && ($mblLastOk6 != true)) do={ :set note " - first ipv6 load failed, see log" }
+  :put ("MBL: installed (script $mblScriptVersion, variant $mblVar, ipv6 " . $mblV6 . $note . ")")
+  :log info ("MBL: installed (script $mblScriptVersion, variant $mblVar, ipv6 " . $mblV6 . $note . ")")
 } else={
   :put "MBL: WARNING installed (script $mblScriptVersion, variant $mblVar, ipv6 $mblV6), but the first load failed or was skipped. See /log print where message~\"MBL\""
   :log warning "MBL: installed (script $mblScriptVersion, variant $mblVar, ipv6 $mblV6), but the first load failed or was skipped"
