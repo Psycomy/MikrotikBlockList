@@ -88,8 +88,8 @@ allowlist is kept.
 
 | Variant | Entries (2026-10-21) | Sources | For |
 |---|---|---|---|
-| `full` (default) | 38,573 | all enabled sources | Routers with enough RAM: attackers, scanners and C2 |
-| `lite` | 4,308 | Spamhaus DROP, DShield, Emerging Threats compromised, ThreatFox, ThreatCluster (the `lite` column of [Sources](#sources-and-licenses)) | Little RAM, or you only want C2 and the most serious attack ranges |
+| `full` (default) | 38,919 | all enabled sources | Routers with enough RAM: attackers, scanners and C2 |
+| `lite` | 4,299 | Spamhaus DROP (and DROPv6 with IPv6 on), DShield, Emerging Threats compromised, ThreatFox, ThreatCluster (the `lite` column of [Sources](#sources-and-licenses)) | Little RAM, or you only want C2 and the most serious attack ranges |
 
 To install `lite`, put `:global mblVariant "lite"; ` in front of the one-liner:
 
@@ -140,8 +140,10 @@ The generator drops non-global IPv6 (ULA, link-local, documentation, multicast, 
 (Cloudflare, GitHub's download range, public DNS resolvers). Limits: `full` 50 to 20,000 entries,
 `lite` 20 to 5,000, with the same 50 % drop and 2x growth checks. On the router a line must be an
 IPv6 address or a CIDR with a prefix from 19 to 128, and a file needs at least 200 bytes and 50
-(`full`) or 20 (`lite`) entries. The 1 % invalid-line budget applies too, so a small `lite` list
-tolerates no invalid line (the generator output is clean).
+(`full`) or 20 (`lite`) entries. The binding rule for a small list is that every listed entry
+must load: the count added must equal the header's `entries` exactly. The 1 % invalid-line budget
+only tolerates stray lines (comments, blanks, junk) around the entries; on a small `lite` list it
+rounds down to no invalid line at all (the generator output is clean).
 
 **Upgrading from v2:** run the same install one-liner again. The old list stays active while the
 first v3 list loads, and the old `mbl-*.rsc` boot copies are removed automatically after the first
@@ -242,7 +244,9 @@ See the [CHANGELOG](CHANGELOG.md) for what changed.
 ```
 
 It removes only what the installer created (`mbl-*` names, `MBL:` comments, `mbl-*.rsc` / `mbl-*.txt` files and
-the `MBL: admin` allowlist entries). Your own `mbl-allow` entries are kept. The `fetch` component
+the `MBL: admin` allowlist entries), for both families: with IPv6 it also removes the six `MBL:`
+rules in `/ipv6 firewall raw`, the `mbl6-a` / `mbl6-b` lists, the `MBL: admin` entries of
+`mbl6-allow` and the `mbl6-*.txt` files. Your own `mbl-allow` / `mbl6-allow` entries are kept. The `fetch` component
 added to `builtin-trust-store` is **not** reverted; set it back by hand if you want.
 
 ## Sources and licenses
@@ -253,6 +257,7 @@ Defined in [`sources.toml`](sources.toml). **C2** = botnet command-and-control s
 | Source | Category | lite | License / terms (as stated by the source) |
 |---|---|:---:|---|
 | [Spamhaus DROP](https://www.spamhaus.org/drop/) *(required)* | attack | yes | Free under the Spamhaus DROP terms; **no explicit redistribution grant** — home use |
+| [Spamhaus DROPv6](https://www.spamhaus.org/drop/) (IPv6, used only with IPv6 on) | attack | yes | Free under the Spamhaus DROP terms; **no explicit redistribution grant** — home use |
 | [Emerging Threats compromised IPs](https://rules.emergingthreats.net/blockrules/) | attack | yes | Emerging Threats open rules, BSD-style terms |
 | [CINS Army](https://cinsscore.com/) | attack |  | Usable "in any way you see fit"; no formal license |
 | [blocklist.de](https://www.blocklist.de/) | attack |  | **Unknown** — check the source terms |
@@ -426,8 +431,8 @@ active list kept`: `no header`, `bad header`, `no footer`, `header/footer mismat
 `count mismatch`, `too many invalid lines (N)`, `too few entries (N)` o `read error`. Medido en un CHR 7.24.5 (1 vCPU, 256 MiB): 40.000 entradas
 en unos 25 s.
 
-**Elegir variante (*full* o *lite*):** `full` es la de por defecto (38.573 entradas el 2026-10-21).
-`lite` (4.308 entradas) usa solo Spamhaus DROP, DShield, Emerging Threats compromised, ThreatFox y
+**Elegir variante (*full* o *lite*):** `full` es la de por defecto (38.919 entradas IPv4 el 2026-10-21).
+`lite` (4.299 entradas IPv4) usa solo Spamhaus DROP (y DROPv6 con IPv6 activado), DShield, Emerging Threats compromised, ThreatFox y
 ThreatCluster (columna `lite` de la [tabla de fuentes](#sources-and-licenses)); es para routers con
 poca RAM o si solo quieres bloquear C2 y los rangos de ataque más graves. Para instalar `lite`, pon
 `:global mblVariant "lite"; ` delante del comando de instalación:
@@ -488,8 +493,11 @@ Viene **desactivado**. Para bloquear también atacantes IPv6, pon
   el rango de descarga de GitHub y los DNS públicos). Límites: `full` 50 a 20.000 entradas, `lite`
   20 a 5.000, con las mismas comprobaciones de caída del 50 % y crecimiento de 2x.
 - En el router, cada línea debe ser una dirección IPv6 o un CIDR con prefijo de 19 a 128; el fichero
-  necesita al menos 200 bytes y 50 (`full`) o 20 (`lite`) entradas. También rige el 1 % de líneas
-  inválidas: una lista `lite` pequeña no tolera ninguna (la salida del generador está limpia).
+  necesita al menos 200 bytes y 50 (`full`) o 20 (`lite`) entradas. En una lista pequeña la regla
+  que manda es que cada entrada listada debe cargarse: lo añadido tiene que coincidir exactamente con
+  `entries` de la cabecera. El 1 % de líneas inválidas solo tolera líneas sueltas (comentarios,
+  vacías, basura) alrededor de las entradas; en una lista `lite` pequeña se queda en ninguna (la
+  salida del generador está limpia).
 - Ficheros: `routeros6-full.txt` y `routeros6-lite.txt` (formato del router, `family=ipv6`), y
   `blocklist6.txt` y `blocklist6-lite.txt` (una entrada por línea, para otros firewalls). `stats.json`
   añade `ipv6` y `entries6` por fuente; `entries` pasa a contar solo IPv4.
@@ -556,8 +564,10 @@ actives IPv6 (ver [IPv6 opcional](#ipv6-opcional)).
 /tool fetch url="https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/main/routeros/uninstall.rsc" check-certificate=yes; /import uninstall.rsc
 ```
 
-Borra solo lo que creó el instalador y conserva tus entradas de `mbl-allow` (salvo las que
-tengan el comentario exacto `MBL: admin`). No revierte el
+Borra solo lo que creó el instalador, de las dos familias: con IPv6 también quita las seis reglas
+`MBL:` de `/ipv6 firewall raw`, las listas `mbl6-a` / `mbl6-b`, las entradas `MBL: admin` de
+`mbl6-allow` y los ficheros `mbl6-*.txt`. Conserva tus entradas de `mbl-allow` / `mbl6-allow` (salvo
+las que tengan el comentario exacto `MBL: admin`). No revierte el
 componente `fetch` de `builtin-trust-store`.
 
 Registro de pruebas: [docs/testing-chr.md](docs/testing-chr.md). El instalador también se prueba de extremo a extremo en un CHR desechable (workflow `routeros-e2e`).
