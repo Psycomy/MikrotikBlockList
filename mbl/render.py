@@ -59,18 +59,34 @@ def _notice(results: list[SourceResult], stamp: str) -> str:
         "",
         f"Build: {stamp}",
         "",
-        "| source | url | category | license / terms | variants | entries | error |",
-        "|---|---|---|---|---|---|---|",
+        "| source | url | category | license / terms | variants | entries | entries6 | error |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for r in results:
         s = r.source
-        cells = [s.name, s.url, s.category, s.license_note, ", ".join(s.variants), str(len(r.networks)), r.error or ""]
+        entries = sum(1 for n in r.networks if n.version == 4)
+        cells = [s.name, s.url, s.category, s.license_note, ", ".join(s.variants),
+                 str(entries), str(len(r.networks) - entries), r.error or ""]
         lines.append("| " + " | ".join(_cell(c) for c in cells) + " |")
     return "\n".join(lines) + "\n"
 
 
 def _json(data: dict) -> str:
     return json.dumps(data, indent=2) + "\n"
+
+
+def ipv6_files(variants6: dict[str, list[IPv6Network]], generated_at: datetime,
+               script_version: str = "0.0.0") -> dict[str, str]:
+    """Contents of the IPv6 files, by file name."""
+    stamp = generated_at.astimezone(timezone.utc).strftime(TIME_FORMAT)
+    files = {}
+    for v, nets in variants6.items():
+        addrs = [_cidr(n) for n in nets]
+        plain = "blocklist6.txt" if v == "full" else f"blocklist6-{v}.txt"
+        files[plain] = "".join(a + "\n" for a in addrs)
+        files[f"routeros6-{v}.txt"] = router_txt(addrs, stamp, script_version,
+                                                 variant=v, family="ipv6")
+    return files
 
 
 def write_outputs(
@@ -80,8 +96,15 @@ def write_outputs(
     generated_at: datetime,
     script_version: str = "0.0.0",
     variants6: dict[str, list[IPv6Network]] | None = None,
+    ipv6_baseline: dict[str, int] | None = None,
+    files6: dict[str, str] | None = None,
 ) -> None:
-    """Write every published file; the "full" variant is mandatory."""
+    """Write every published file; the "full" variant is mandatory.
+
+    variants6 None means IPv6 is withheld: no IPv6 files, and stats.json keeps
+    ipv6_baseline (the last published IPv6 totals) so the next build still
+    compares against it. files6 are precomputed IPv6 contents (see ipv6_files).
+    """
     if "full" not in variants:
         raise ValueError("variants must include 'full'")
     out_dir = Path(out_dir)
@@ -89,7 +112,13 @@ def write_outputs(
     generated_at = generated_at.astimezone(timezone.utc)
     stamp = generated_at.strftime(TIME_FORMAT)
     addresses = {v: [_cidr(n) for n in nets] for v, nets in variants.items()}
-    addresses6 = {v: [_cidr(n) for n in nets] for v, nets in (variants6 or {}).items()}
+    if variants6 is None:
+        totals6 = dict(ipv6_baseline or {})
+        files6 = {}
+    else:
+        totals6 = {v: len(nets) for v, nets in variants6.items()}
+        if files6 is None:
+            files6 = ipv6_files(variants6, generated_at, script_version)
     total = len(addresses["full"])
 
     stats = {
@@ -98,7 +127,7 @@ def write_outputs(
         "variants": {v: {"total": len(a)} for v, a in addresses.items()},
         "ipv6": {
             "published": variants6 is not None,
-            "variants": {v: {"total": len(a)} for v, a in addresses6.items()},
+            "variants": {v: {"total": n} for v, n in totals6.items()},
         },
         "sources": {
             r.source.name: {
@@ -135,10 +164,6 @@ def write_outputs(
         plain = "blocklist.txt" if v == "full" else f"blocklist-{v}.txt"
         files[plain] = "".join(a + "\n" for a in addrs)
         files[f"routeros-{v}.txt"] = router_txt(addrs, stamp, script_version, variant=v)
-    for v, addrs in addresses6.items():
-        plain = "blocklist6.txt" if v == "full" else f"blocklist6-{v}.txt"
-        files[plain] = "".join(a + "\n" for a in addrs)
-        files[f"routeros6-{v}.txt"] = router_txt(addrs, stamp, script_version,
-                                                 variant=v, family="ipv6")
+    files.update(files6)
     for name, content in files.items():
         (out_dir / name).write_text(content, encoding="utf-8", newline="\n")

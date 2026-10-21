@@ -11,7 +11,7 @@ from pathlib import Path
 from mbl.checks import LIMITS, LIMITS6, MAX_DROP, safety_errors
 from mbl.fetch import USER_AGENT, SourceResult, fetch_all
 from mbl.normalize import normalize, normalize6
-from mbl.render import write_outputs
+from mbl.render import ipv6_files, write_outputs
 from mbl.sources import VARIANTS, load_allowlist, load_sources
 
 PREVIOUS_TIMEOUT = 15
@@ -118,14 +118,11 @@ def build(sources_path: Path, allowlist_path: Path, out_dir: Path,
     results = fetcher(sources)
     variants = {v: normalize([n for r in results if v in r.source.variants
                               for n in r.networks], allowlist) for v in VARIANTS}
-    variants6 = {v: normalize6([n for r in results if v in r.source.variants
-                                for n in r.networks], allowlist) for v in VARIANTS}
     total = len(variants["full"])
 
     text, md = _summary(results, total)
     print(text, end="")
     print("".join(f"total {v}: {len(nets)}\n" for v, nets in variants.items()), end="")
-    print("".join(f"total ipv6 {v}: {len(nets)}\n" for v, nets in variants6.items()), end="")
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary_path:
         with open(summary_path, "a", encoding="utf-8") as fh:
@@ -156,10 +153,20 @@ def build(sources_path: Path, allowlist_path: Path, out_dir: Path,
             print(f"error: {error}", file=sys.stderr)
         return 1
 
-    # IPv6 is best effort: any problem withholds all IPv6 files, never fails the build.
-    errors6 = []
-    for v, nets in variants6.items():
-        errors6 += check(v, nets, LIMITS6, IPV6_PREFIX, "ipv6 ")
+    # IPv6 is best effort: any problem (a failed check or an unexpected exception)
+    # withholds all IPv6 files, never fails the build nor blocks the IPv4 files.
+    variants6, files6, errors6 = None, None, []
+    try:
+        variants6 = {v: normalize6([n for r in results if v in r.source.variants
+                                    for n in r.networks], allowlist) for v in VARIANTS}
+        print("".join(f"total ipv6 {v}: {len(nets)}\n" for v, nets in variants6.items()),
+              end="")
+        for v, nets in variants6.items():
+            errors6 += check(v, nets, LIMITS6, IPV6_PREFIX, "ipv6 ")
+        if not errors6:
+            files6 = ipv6_files(variants6, now, script_version)
+    except Exception as exc:
+        errors6 = [f"ipv6: unexpected {type(exc).__name__}: {exc}"]
     if errors6:
         for error in errors6:
             print(f"warning: IPv6 not published, {error}", file=sys.stderr)
@@ -167,7 +174,11 @@ def build(sources_path: Path, allowlist_path: Path, out_dir: Path,
             with open(summary_path, "a", encoding="utf-8") as fh:
                 fh.write("\n**Warning: IPv6 lists not published**\n\n"
                          + "".join(f"- {e}\n" for e in errors6))
-        variants6 = None
+        variants6, files6 = None, None
 
-    write_outputs(Path(out_dir), variants, results, now, script_version, variants6)
+    # A withheld day keeps the last published IPv6 totals in stats.json, so the
+    # next build still compares against that baseline, not against today's.
+    baseline6 = {v: previous[IPV6_PREFIX + v] for v in VARIANTS if IPV6_PREFIX + v in previous}
+    write_outputs(Path(out_dir), variants, results, now, script_version, variants6,
+                  ipv6_baseline=baseline6, files6=files6)
     return 0

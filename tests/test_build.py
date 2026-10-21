@@ -421,6 +421,55 @@ variants = ["lite", "full"]
         for name, data in before.items():
             self.assertEqual((self.out / name).read_bytes(), data, name)
 
+    def _chain(self, counts6):
+        """Run one build per IPv6 count, each reading the previous run's stats.json."""
+        self.sources.write_text(SOURCES6_TOML)
+        published = []
+        for i, count6 in enumerate(counts6):
+            previous = None
+            if i:
+                stats = json.loads((self.out / "stats.json").read_text())
+                for name in self.out.iterdir():
+                    name.unlink()
+                ctx = self._stats(stats)
+                previous = "http://x"
+            else:
+                ctx = contextlib.nullcontext()
+            with ctx:
+                self.assertEqual(self._build(_fetcher6(count6=count6), previous=previous), 0)
+            stats = json.loads((self.out / "stats.json").read_text())
+            published.append((stats["ipv6"]["published"], stats["ipv6"]["variants"]["full"]["total"],
+                              (self.out / "routeros6-full.txt").exists()))
+        return published
+
+    def test_withheld_ipv6_carries_forward_baseline_after_drop(self):
+        self.assertEqual(self._chain([648, 100, 100]),
+                         [(True, 648, True), (False, 648, False), (False, 648, False)])
+
+    def test_withheld_ipv6_carries_forward_baseline_after_growth(self):
+        self.assertEqual(self._chain([100, 300, 300]),
+                         [(True, 100, True), (False, 100, False), (False, 100, False)])
+
+    def _assert_ipv6_withheld_on_exception(self, target):
+        self.sources.write_text(SOURCES6_TOML)
+        summary = self.tmp / "summary.md"
+        with mock.patch(target, side_effect=RuntimeError("kaboom")), \
+                mock.patch.dict("os.environ", {"GITHUB_STEP_SUMMARY": str(summary)}):
+            code, err = self._build_err(_fetcher6())
+        self.assertEqual(code, 0)
+        self.assertEqual({p.name for p in self.out.iterdir()}, FILES)
+        stats = json.loads((self.out / "stats.json").read_text())
+        self.assertFalse(stats["ipv6"]["published"])
+        self.assertIn("warning: IPv6 not published", err)
+        self.assertIn("kaboom", err)
+        self.assertIn("kaboom", summary.read_text())
+
+    def test_normalize6_exception_withholds_ipv6(self):
+        self._assert_ipv6_withheld_on_exception("mbl.build.normalize6")
+
+    def test_ipv6_render_exception_withholds_ipv6(self):
+        self._assert_ipv6_withheld_on_exception("mbl.build.ipv6_files")
+
     def test_build_reads_version(self):
         self.version.write_text("9.8.7\n")
         self.assertEqual(self._build(_fetcher()), 0)
