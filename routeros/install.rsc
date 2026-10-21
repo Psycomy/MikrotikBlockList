@@ -264,91 +264,95 @@
     :local bad 0
     :local off 0
     :local carry ""
-    :while ($off < $fsize && $reason = "") do={
-      :local d ""
-      :do {
-        :set d ([/file read file=$fname offset=$off chunk-size=$chunkSize as-value]->"data")
-      } on-error={}
-      :if ([:len $d] = 0) do={
-        # read error: stop here, the missing footer rejects the file
-        :set off $fsize
-      } else={
-        :set off ($off + [:len $d])
-      }
-      :local buf ($carry . $d)
-      # the last line may lack its "\n"
-      :if ($off >= $fsize && [:len $buf] > 0 && [:pick $buf ([:len $buf] - 1)] != "\n") do={
-        :set buf ($buf . "\n")
-      }
-      :local s 0
-      :local e [:find $buf "\n" -1]
-      :while ([:typeof $e] = "num" && $reason = "") do={
-        :local ln [:pick $buf $s $e]
-        :set s ($e + 1)
-        :set e [:find $buf "\n" ($s - 1)]
-        :if ($skip) do={
-          # rest of an over-long line, already counted
-          :set skip false
+    # any unexpected error while reading goes through the rejection below
+    :do {
+      :while ($off < $fsize && $reason = "") do={
+        :local d ""
+        :do {
+          :set d ([/file read file=$fname offset=$off chunk-size=$chunkSize as-value]->"data")
+        } on-error={}
+        :if ([:len $d] = 0) do={
+          # read error: stop here, the missing footer rejects the file
+          :set off $fsize
         } else={
-          # strip trailing "\r" and spaces
-          :local n [:len $ln]
-          :while ($n > 0 && ([:pick $ln ($n - 1)] = "\r" || [:pick $ln ($n - 1)] = " ")) do={ :set n ($n - 1) }
-          :if ($n < [:len $ln]) do={ :set ln [:pick $ln 0 $n] }
-          :if ($first) do={
-            :set first false
-            :if ([:pick $ln 0 20] != "# MikrotikBlockList ") do={
-              :set reason "no header"
-            } else={
-              :local en [$mblField $ln "entries"]
-              :if ([$mblField $ln "format"] != "1" || [$mblField $ln "family"] != "ipv4" || !($en ~ "^[0-9]+\$")) do={
-                :set reason "bad header"
-              } else={
-                :set entries [:tonum $en]
-                :local g [$mblField $ln "generated"]
-                :if ([:len $g] > 0) do={ :set gen $g }
-              }
-            }
+          :set off ($off + [:len $d])
+        }
+        :local buf ($carry . $d)
+        # the last line may lack its "\n"
+        :if ($off >= $fsize && [:len $buf] > 0 && [:pick $buf ([:len $buf] - 1)] != "\n") do={
+          :set buf ($buf . "\n")
+        }
+        :local s 0
+        :local e [:find $buf "\n" -1]
+        :while ([:typeof $e] = "num" && $reason = "") do={
+          :local ln [:pick $buf $s $e]
+          :set s ($e + 1)
+          :set e [:find $buf "\n" ($s - 1)]
+          :if ($skip) do={
+            # rest of an over-long line, already counted
+            :set skip false
           } else={
-            :if ($footer < 0 && [:pick $ln 0 18] = "# MBL-END entries=" && [:pick $ln 18 [:len $ln]] ~ "^[0-9]+\$") do={
-              :set footer [:tonum [:pick $ln 18 [:len $ln]]]
-            } else={
-              :local ok false
-              :if ($footer < 0 && $ln ~ "^[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}(/[0-9]{1,2})?\$") do={
-                :local sl [:find $ln "/"]
-                :local ip $ln
-                :local plen 32
-                :if ([:typeof $sl] = "num") do={
-                  :set ip [:pick $ln 0 $sl]
-                  :set plen [:tonum [:pick $ln ($sl + 1) [:len $ln]]]
-                }
-                :if ([:typeof [:toip $ip]] = "ip" && $plen >= 8 && $plen <= 32) do={
-                  :do {
-                    /ip firewall address-list add list=$target address=$ln timeout=7d
-                    :set added ($added + 1)
-                    :set ok true
-                  } on-error={}
+            # strip trailing "\r" and spaces
+            :local n [:len $ln]
+            :while ($n > 0 && ([:pick $ln ($n - 1)] = "\r" || [:pick $ln ($n - 1)] = " ")) do={ :set n ($n - 1) }
+            :if ($n < [:len $ln]) do={ :set ln [:pick $ln 0 $n] }
+            :if ($first) do={
+              :set first false
+              :if ([:pick $ln 0 20] != "# MikrotikBlockList ") do={
+                :set reason "no header"
+              } else={
+                :local en [$mblField $ln "entries"]
+                :if ([$mblField $ln "format"] != "1" || [$mblField $ln "family"] != "ipv4" || !($en ~ "^[0-9]+\$")) do={
+                  :set reason "bad header"
+                } else={
+                  :set entries [:tonum $en]
+                  :local g [$mblField $ln "generated"]
+                  # only a date-like value is logged or used for the stale check
+                  :if ($g ~ "^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T") do={ :set gen $g }
                 }
               }
-              :if (!$ok) do={ :set bad ($bad + 1) }
+            } else={
+              :if ($footer < 0 && [:pick $ln 0 18] = "# MBL-END entries=" && [:pick $ln 18 [:len $ln]] ~ "^[0-9]+\$") do={
+                :set footer [:tonum [:pick $ln 18 [:len $ln]]]
+              } else={
+                :local ok false
+                :if ($footer < 0 && $ln ~ "^[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}(/[0-9]{1,2})?\$") do={
+                  :local sl [:find $ln "/"]
+                  :local ip $ln
+                  :local plen 32
+                  :if ([:typeof $sl] = "num") do={
+                    :set ip [:pick $ln 0 $sl]
+                    :set plen [:tonum [:pick $ln ($sl + 1) [:len $ln]]]
+                  }
+                  :if ([:typeof [:toip $ip]] = "ip" && $plen >= 8 && $plen <= 32) do={
+                    :do {
+                      /ip firewall address-list add list=$target address=$ln timeout=7d
+                      :set added ($added + 1)
+                      :set ok true
+                    } on-error={}
+                  }
+                }
+                :if (!$ok) do={ :set bad ($bad + 1) }
+              }
             }
           }
         }
+        :set carry [:pick $buf $s [:len $buf]]
+        :if ([:len $carry] > $maxLine) do={
+          # an over-long first line cannot be the header
+          :if ($first) do={ :set reason "no header" }
+          :if (!$skip) do={ :set bad ($bad + 1) }
+          :set carry ""
+          :set skip true
+        }
       }
-      :set carry [:pick $buf $s [:len $buf]]
-      :if ([:len $carry] > $maxLine) do={
-        # an over-long first line cannot be the header
-        :if ($first) do={ :set reason "no header" }
-        :if (!$skip) do={ :set bad ($bad + 1) }
-        :set carry ""
-        :set skip true
-      }
-    }
+    } on-error={ :set reason "read error" }
     :if ($reason = "") do={
       :if ($footer < 0) do={
         :set reason "no footer"
       } else={
         :if ($footer != $entries) do={
-          :set reason "count mismatch"
+          :set reason "header/footer mismatch"
         } else={
           :if (($bad * 100) > $entries) do={
             :set reason "too many invalid lines ($bad)"
@@ -421,11 +425,14 @@
 
     # ---- v2 leftovers: its boot copies are only removed now that a v3
     # load has succeeded, so an upgrade never loses the last good copy.
-    :local v2 [/file find where name~"^(flash/)?mbl-.*\\.rsc\$"]
-    :if ([:len $v2] > 0) do={
-      /file remove $v2
-      :log info "MBL: removed v2 files"
-    }
+    # Errors are ignored: they must never turn a good load into "update aborted".
+    :do {
+      :local v2 [/file find where name~"^(flash/)?mbl-.*\\.rsc\$"]
+      :if ([:len $v2] > 0) do={
+        /file remove $v2
+        :log info "MBL: removed v2 files"
+      }
+    } on-error={}
 
     # ---- stale list: the list is loaded either way; this only warns, e.g.
     # when the GitHub Action has stopped. Errors here are ignored so they can

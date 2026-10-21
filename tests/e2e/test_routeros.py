@@ -50,7 +50,9 @@ TEST_CA_CN = "MBL Test CA"
 LIST_SIZE = 10000
 MIN_ENTRIES = 1000
 # Lines that must never run on the router: they are only data, counted as invalid.
+# 12 lines, under the 1 % budget (100 with LIST_SIZE entries).
 MALICIOUS = [
+    "/system reboot",
     "/ip firewall address-list add list=mbl-pwned address=1.1.1.1",
     "1.2.3.4; /ip firewall address-list add list=mbl-pwned address=1.1.1.2",
     "$([/ip firewall address-list add list=mbl-pwned address=1.1.1.3])",
@@ -61,6 +63,7 @@ MALICIOUS = [
     "1.2.3.0/4",
     "abc",
     "",
+    "9" * 100_000,  # over-long line: spans several 32 KiB chunks
 ]
 
 
@@ -483,9 +486,13 @@ class RouterOsTest(unittest.TestCase):
         self.serve_variant(name)
         try:
             old = self.active_list()
+            # a global variable is lost on reboot: proves `/system reboot` did not run
+            self.chr.run(':global mblE2eAlive "yes"')
             token = self.mark()
             self.server.requests.clear()
             self.update()
+            self.assertEqual(self.chr.run(":global mblE2eAlive; :put $mblE2eAlive").strip(), "yes")
+            self.assertIn(token, self.log())
             self.assertNotEqual(self.active_list(), old)
             self.assertEqual(self.count(self.active_list()), LIST_SIZE)
             self.assertEqual(self.count("mbl-pwned"), 0)
@@ -493,6 +500,8 @@ class RouterOsTest(unittest.TestCase):
             self.assertIn("MBL: loaded", self.log_after(token))
         finally:
             self.restore_path(name)
+            with suppress(ChrError, OSError):
+                self.chr.run('/system script environment remove [find where name="mblE2eAlive"]')
 
     def test_12_count_mismatch_rejected(self):
         name = "routeros-full-mismatch.txt"
