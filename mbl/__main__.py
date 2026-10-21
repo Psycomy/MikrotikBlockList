@@ -13,12 +13,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--sources", type=Path, default=Path("sources.toml"))
     p.add_argument("--allowlist", type=Path, default=Path("allowlist.txt"))
     p.add_argument("--out", type=Path, default=Path("dist"))
+    p.add_argument("--version-file", type=Path, default=Path("VERSION"))
     p.add_argument("--previous-stats", default=None, metavar="URL")
     p.add_argument("--allow-growth", action="store_true",
                    help="skip only the check that refuses a total more than 2x the previous one")
     args = parser.parse_args(argv)
     return build(args.sources, args.allowlist, args.out, args.previous_stats,
-                 allow_growth=args.allow_growth)
+                 allow_growth=args.allow_growth, version_path=args.version_file)
 
 
 if __name__ == "__main__":

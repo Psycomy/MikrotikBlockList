@@ -7,7 +7,7 @@ from ipaddress import IPv4Network
 from pathlib import Path
 
 from mbl.fetch import SourceResult
-from mbl.render import write_outputs
+from mbl.render import router_txt, write_outputs
 from mbl.sources import Source
 
 ADD_RE = re.compile(r"^add list=\$mblTarget timeout=7d address=\d+\.\d+\.\d+\.\d+(/\d+)?$")
@@ -23,6 +23,31 @@ class RenderTest(unittest.TestCase):
     def _write(self, nets, tmp):
         write_outputs(Path(tmp) / "out", nets, _results(nets), WHEN)
         return Path(tmp) / "out"
+
+    def test_router_txt_format(self):
+        out = router_txt(["1.2.3.4", "5.6.0.0/16"], "2026-10-21T04:17:00Z", "3.0.0")
+        self.assertEqual(out, (
+            "# MikrotikBlockList v3 format=1 variant=full family=ipv4 "
+            "generated=2026-10-21T04:17:00Z entries=2 script=3.0.0\n"
+            "1.2.3.4\n5.6.0.0/16\n# MBL-END entries=2\n"))
+
+    def test_write_outputs_writes_router_txt(self):
+        nets = [IPv4Network("1.10.16.0/20"), IPv4Network("8.8.8.8/32")]
+        with tempfile.TemporaryDirectory() as tmp:
+            out = self._write(nets, tmp)
+            lines = (out / "routeros-full.txt").read_text().splitlines()
+            plain = (out / "blocklist.txt").read_text().splitlines()
+        self.assertEqual(lines[1:-1], plain)
+        self.assertIn("entries=2", lines[0])
+        self.assertIn("script=0.0.0", lines[0])
+        self.assertEqual(lines[-1], "# MBL-END entries=2")
+
+    def test_blocklist_txt_has_no_header(self):
+        nets = [IPv4Network("8.8.8.8/32")]
+        with tempfile.TemporaryDirectory() as tmp:
+            out = self._write(nets, tmp)
+            first = (out / "blocklist.txt").read_text().splitlines()[0]
+        self.assertFalse(first.startswith("#"))
 
     def test_rsc_structure(self):
         nets = [IPv4Network("1.10.16.0/20"), IPv4Network("8.8.8.8/32")]

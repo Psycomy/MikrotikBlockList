@@ -29,6 +29,16 @@ def _rsc(addresses: list[str], stamp: str) -> str:
     return "\n".join(lines) + "\n"
 
 
+def router_txt(addresses: list[str], stamp: str, script_version: str,
+               variant: str = "full", family: str = "ipv4") -> str:
+    n = len(addresses)
+    lines = [f"# MikrotikBlockList v3 format=1 variant={variant} family={family} "
+             f"generated={stamp} entries={n} script={script_version}"]
+    lines += addresses
+    lines.append(f"# MBL-END entries={n}")
+    return "\n".join(lines) + "\n"
+
+
 def _cell(value: str) -> str:
     return value.replace("|", "\\|").replace("\n", " ")
 
@@ -67,6 +77,7 @@ def write_outputs(
     networks: list[IPv4Network],
     results: list[SourceResult],
     generated_at: datetime,
+    script_version: str = "0.0.0",
 ) -> None:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -104,6 +115,7 @@ def write_outputs(
     files = {
         "blocklist.rsc": _rsc(addresses, stamp),
         "blocklist.txt": "".join(a + "\n" for a in addresses),
+        "routeros-full.txt": router_txt(addresses, stamp, script_version),
         "stats.json": _json(stats),
         "badge-entries.json": _json(badge_entries),
         "badge-updated.json": _json(badge_updated),

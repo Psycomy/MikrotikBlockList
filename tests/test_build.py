@@ -22,7 +22,7 @@ category = "attack"
 required = true
 """
 FILES = {"blocklist.rsc", "blocklist.txt", "stats.json",
-         "badge-entries.json", "badge-updated.json", "NOTICE.md"}
+         "badge-entries.json", "badge-updated.json", "NOTICE.md", "routeros-full.txt"}
 
 
 def _nets(count):
@@ -48,8 +48,11 @@ class BuildTest(unittest.TestCase):
         self.allow = self.tmp / "allowlist.txt"
         self.allow.write_text("# none\n")
         self.out = self.tmp / "dist"
+        self.version = self.tmp / "VERSION"
+        self.version.write_text("3.0.0\n")
 
     def _build(self, fetcher, previous=None, sources=None, **kwargs):
+        kwargs.setdefault("version_path", self.version)
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             return build(sources or self.sources, self.allow, self.out, previous,
                          now=WHEN, fetcher=fetcher, **kwargs)
@@ -88,6 +91,29 @@ class BuildTest(unittest.TestCase):
         self.assertEqual({p.name for p in self.out.iterdir()}, FILES)
 
 
+    def test_build_reads_version(self):
+        self.version.write_text("9.8.7\n")
+        self.assertEqual(self._build(_fetcher()), 0)
+        header = (self.out / "routeros-full.txt").read_text().splitlines()[0]
+        self.assertIn("script=9.8.7", header)
+
+    def test_build_missing_version_returns_2(self):
+        missing = self.tmp / "nope"
+        self.assertEqual(self._build(_fetcher(), version_path=missing), 2)
+        self.assertFalse(self.out.exists())
+
+    def test_build_empty_version_returns_2(self):
+        self.version.write_text("  \n")
+        self.assertEqual(self._build(_fetcher()), 2)
+
+    def test_build_malformed_version_returns_2(self):
+        for bad in ("3.0", "v3.0.0", "3.0.0 x=1", "3.0.0\nentries=5", "3.0.0-rc1"):
+            with self.subTest(version=bad):
+                self.version.write_text(bad + "\n")
+                self.assertEqual(self._build(_fetcher()), 2)
+                self.assertFalse(self.out.exists())
+
+
 class MainTest(unittest.TestCase):
     @mock.patch("mbl.__main__.build", return_value=0)
     def test_allow_growth_flag(self, build_mock):
@@ -95,6 +121,13 @@ class MainTest(unittest.TestCase):
         self.assertFalse(build_mock.call_args.kwargs["allow_growth"])
         self.assertEqual(main(["build", "--allow-growth"]), 0)
         self.assertTrue(build_mock.call_args.kwargs["allow_growth"])
+
+    @mock.patch("mbl.__main__.build", return_value=0)
+    def test_version_file_flag(self, build_mock):
+        main(["build"])
+        self.assertEqual(build_mock.call_args.kwargs["version_path"], Path("VERSION"))
+        main(["build", "--version-file", "x/V"])
+        self.assertEqual(build_mock.call_args.kwargs["version_path"], Path("x/V"))
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 """Build pipeline: fetch, normalize, check and write the blocklist."""
 import json
 import os
+import re
 import sys
 import tomllib
 import urllib.request
@@ -49,11 +50,17 @@ def _summary(results: list[SourceResult], total: int) -> tuple[str, str]:
 
 def build(sources_path: Path, allowlist_path: Path, out_dir: Path,
           previous_stats_url: str | None, now: datetime | None = None,
-          fetcher=fetch_all, allow_growth: bool = False) -> int:
+          fetcher=fetch_all, allow_growth: bool = False,
+          version_path: Path = Path("VERSION")) -> int:
     """Return 0 on success, 1 if safety checks fail, 2 on configuration errors."""
     try:
         sources = load_sources(Path(sources_path))
         allowlist = load_allowlist(Path(allowlist_path))
+        script_version = Path(version_path).read_text(encoding="utf-8").strip()
+        if not script_version:
+            raise ValueError(f"{version_path} is empty")
+        if not re.fullmatch(r"\d+\.\d+\.\d+", script_version, re.ASCII):
+            raise ValueError(f"{version_path} is not MAJOR.MINOR.PATCH: {script_version!r}")
     except (ValueError, TypeError, tomllib.TOMLDecodeError, OSError) as exc:
         print(f"configuration error: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 2
@@ -78,5 +85,5 @@ def build(sources_path: Path, allowlist_path: Path, out_dir: Path,
             print(f"error: {error}", file=sys.stderr)
         return 1
 
-    write_outputs(Path(out_dir), networks, results, now)
+    write_outputs(Path(out_dir), networks, results, now, script_version)
     return 0

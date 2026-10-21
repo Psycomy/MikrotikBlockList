@@ -36,7 +36,7 @@
 ```mermaid
 flowchart LR
     S["Public threat feeds<br/>(attack + C2)"] -->|"download, parse,<br/>filter, aggregate"| A["GitHub Action<br/>daily 04:17 UTC"]
-    A -->|"safety checks pass"| L[("lists branch<br/>blocklist.rsc")]
+    A -->|"safety checks pass"| L[("lists branch<br/>routeros-full.txt")]
     L -->|"HTTPS fetch, once a day<br/>at a random time"| R["MikroTik RouterOS v7<br/>raw firewall drop"]
 ```
 
@@ -51,8 +51,10 @@ flowchart LR
    ticked, which skips only the 2x check (locally: `python -m mbl build --allow-growth`).
 3. The result goes to the orphan [`lists`](https://github.com/Psycomy/MikrotikBlockList/tree/lists)
    branch, overwritten each time with a single commit.
-4. Your router fetches `blocklist.rsc` over HTTPS (`check-certificate=yes`), validates it and loads it
-   into an address list that `/ip firewall raw` drops — before connection tracking, so it is cheap.
+4. Your router fetches `routeros-full.txt` over HTTPS (`check-certificate=yes`), reads it as plain
+   data, validates every line and adds the addresses to an address list that `/ip firewall raw`
+   drops — before connection tracking, so it is cheap. The router never imports or runs anything
+   from the file.
 
 ## Requirements
 
@@ -61,9 +63,10 @@ flowchart LR
 - Interface lists named **`WAN`** (your Internet interface) and **`LAN`** (your local interfaces).
   The default home configuration already has them; the installer stops without changing anything
   if they are missing.
-- **RAM:** today's list (~39k entries) takes about **7–12 MiB**, and during an update the old and
-  the new lists coexist for a few seconds, so plan for twice that. On 256 MiB devices that is fine;
-  tight devices should keep an eye on `/system resource print`.
+- **RAM:** measured on a 256 MiB CHR (RouterOS 7.24.5) with a 40k-entry list: about
+  **36.7 MiB free** with one list loaded, and never below **30.5 MiB** while the old and the new
+  lists coexist during an update (about 25 seconds). Tight devices should keep an eye on
+  `/system resource print`.
 
 ## Install
 
@@ -73,9 +76,13 @@ Paste this into the RouterOS terminal (Winbox, WebFig or SSH):
 /tool fetch url="https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/main/routeros/install.rsc" check-certificate=yes; /import install.rsc
 ```
 
-It prints `MBL: installed` when the first list is loaded (about 10 seconds). The installer is
+It prints `MBL: installed` when the first list is loaded (about 20 seconds). The installer is
 idempotent: run it again at any time to upgrade or repair; nothing is duplicated and your
 allowlist is kept.
+
+**Upgrading from v2:** run the same install one-liner again. The old list stays active while the
+first v3 list loads, and the old `mbl-*.rsc` boot copies are removed automatically after the first
+successful v3 load (log: `MBL: removed v2 files`).
 
 > [!TIP]
 > **Certificate error on the one-liner?** On RouterOS 7.21–7.23, or with a customised trust
@@ -112,7 +119,7 @@ Plus:
 | Script | `mbl-update` | Downloads, validates and loads the list |
 | Scheduler | `mbl-daily` | Runs `mbl-update` once a day at a random time (so routers do not all hit GitHub together) |
 | Scheduler | `mbl-boot` | At startup reloads the last good copy at once, then tries a fresh download |
-| File | `mbl-last.rsc` | Last good list, used at boot (in `flash/` on devices that have it) |
+| File | `mbl-last.txt` | Last good list, used at boot (in `flash/` on devices that have it) |
 
 ## See what is blocked
 
@@ -154,7 +161,7 @@ use that comment for your own entries.
 /tool fetch url="https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/main/routeros/uninstall.rsc" check-certificate=yes; /import uninstall.rsc
 ```
 
-It removes only what the installer created (`mbl-*` names, `MBL:` comments, `mbl-*.rsc` files and
+It removes only what the installer created (`mbl-*` names, `MBL:` comments, `mbl-*.rsc` / `mbl-*.txt` files and
 the `MBL: admin` allowlist entries). Your own `mbl-allow` entries are kept. The `fetch` component
 added to `builtin-trust-store` is **not** reverted; set it back by hand if you want.
 
@@ -196,8 +203,9 @@ The [`lists`](https://github.com/Psycomy/MikrotikBlockList/tree/lists) branch co
 
 | File | Content |
 |---|---|
-| `blocklist.rsc` | RouterOS import file used by the router |
-| `blocklist.txt` | Plain list, one IPv4 address or CIDR per line — **handy for other firewalls** (pfSense, OPNsense, iptables/ipset, nftables…) |
+| `routeros-full.txt` | List in the router format (header line, one address per line, footer line); this is what v3 routers download |
+| `blocklist.rsc` | **Legacy**, only for routers still on v2; published unchanged and kept at least until 2027-04-30. v3 routers do not use it |
+| `blocklist.txt` | Plain list, one IPv4 address or CIDR per line, no header — **handy for other firewalls** (pfSense, OPNsense, iptables/ipset, nftables…) |
 | `stats.json` | Generation time, total, and per-source entries and errors |
 | [`NOTICE.md`](https://github.com/Psycomy/MikrotikBlockList/blob/lists/NOTICE.md) | Attribution: every source used in that build, its URL, terms and entry count |
 | `badge-entries.json`, `badge-updated.json` | shields.io endpoints for the badges above |
@@ -205,25 +213,34 @@ The [`lists`](https://github.com/Psycomy/MikrotikBlockList/tree/lists) branch co
 <details>
 <summary><b>How an update works on the router</b></summary>
 
-1. `mbl-update` downloads `blocklist.rsc` over HTTPS with `check-certificate=yes`. A failed
+1. `mbl-update` downloads `routeros-full.txt` over HTTPS with `check-certificate=yes`. A failed
    download changes nothing.
-2. It checks the file: at least 100,000 bytes, and the header must start with
-   `# MikrotikBlockList` (so an HTML error page is never imported).
-3. It imports the file into the list the rules are **not** using (`mbl-a` or `mbl-b`), then checks
-   that the end-of-file marker ran and that there are at least 1,000 entries. A truncated or
-   partial file is discarded and the active list is kept.
-4. Only then are the three drop rules switched to the new list, and the old one is emptied. You are
-   protected the whole time; the two lists coexist only for those few seconds.
-5. The new file is kept as `mbl-last.rsc`. On devices with a `flash/` directory the download and
-   import use RAM, and only the validated file is copied to `flash/mbl-last.rsc`, if free storage
+2. It checks the size (at least 100,000 bytes) and reads the file with `/file read` in 32 KiB
+   chunks. The first line must be the header (`# MikrotikBlockList v3 format=1 variant=full
+   family=ipv4 ... entries=N script=<version>`), so an HTML error page is never accepted.
+3. Every other line is only a value: it must be an IPv4 address or a CIDR with a prefix from 8 to
+   32, and only then is it added to the list the rules are **not** using (`mbl-a` or `mbl-b`).
+   Nothing from the file is imported, parsed or executed; a line such as `/system reboot` is just an
+   invalid line.
+4. The load is rejected, and the active list kept, if the header is missing or wrong, the footer
+   (`# MBL-END entries=N`) is missing, the header and footer counts differ, the added count differs
+   from `entries`, more than 1 % of the lines are invalid, or fewer than 1,000 entries were added.
+   The log line `MBL: <file> rejected (<reason>), active list kept` names the reason: `no header`,
+   `bad header`, `no footer`, `header/footer mismatch`, `count mismatch`, `too many invalid lines
+   (N)`, `too few entries (N)` or `read error`.
+5. Only then are the three drop rules switched to the new list, and the old one is emptied. You are
+   protected the whole time; the two lists coexist only while the update runs.
+6. The new file is kept as `mbl-last.txt`. On devices with a `flash/` directory the download and
+   read use RAM, and only the validated file is copied to `flash/mbl-last.txt`, if free storage
    is more than twice its size (otherwise a warning is logged and the previous copy is kept).
    Address-list entries with a timeout do not survive a
    reboot, so `mbl-boot` reloads this copy at startup (in seconds, even without Internet) and
    then tries a fresh download 60 seconds later.
-6. A lock prevents two updates from running at once; everything is logged with the `MBL:` prefix.
+7. A lock prevents two updates from running at once; everything is logged with the `MBL:` prefix.
 
-Measured on a CHR with 1 vCPU and 256 MiB, ~32k entries: import ~7 s, full update ~19 s, about
-6–10 MiB of RAM per list. Full test record: [docs/testing-chr.md](docs/testing-chr.md) (in Spanish).
+Measured on a CHR 7.24.5 with 1 vCPU and 256 MiB (2026-10-21): a full update of 40,000 entries
+takes about 25 s; free RAM is 36.7 MiB with one list loaded and at least 30.5 MiB while both lists
+coexist. Full test record: [docs/testing-chr.md](docs/testing-chr.md) (in Spanish).
 
 </details>
 
@@ -243,8 +260,8 @@ a false positive in a feed, report it to that feed.
 
 **How do I force an update now?** `/system script run mbl-update`, then check `/log print where message~"MBL"`.
 
-**My device has little RAM.** Each list of ~39k entries uses about 7–12 MiB and an update briefly
-needs two. Check free memory with `/system resource print` before installing.
+**My device has little RAM.** On a 256 MiB CHR with a 40k-entry list, free RAM was about 36.7 MiB
+with one list and never below 30.5 MiB during an update (two lists for about 25 seconds). Check free memory with `/system resource print` before installing.
 
 **Why the raw table and not the filter table?** Raw rules run before connection tracking, so
 dropped packets cost almost nothing and never create conntrack entries.
@@ -257,8 +274,8 @@ dropped packets cost almost nothing and never create conntrack entries.
 1. Fork the repository. The workflow uses `${{ github.repository }}`, so it publishes to **your**
    `lists` branch automatically (enable Actions in your fork; it runs daily and on pushes to `main`).
 2. Edit [`sources.toml`](sources.toml) and [`allowlist.txt`](allowlist.txt) as you like.
-3. In [`routeros/install.rsc`](routeros/install.rsc) change the `mblUrl` line at the top to your
-   fork's `.../lists/blocklist.rsc`, and use your fork's URL in the install one-liner.
+3. In [`routeros/install.rsc`](routeros/install.rsc) change the `mblBase` line at the top to your
+   fork's `.../lists` URL (the script appends `/routeros-full.txt`), and use your fork's URL in the install one-liner.
    To test against another server, set `:global mblUrlBase "https://host:port"` before the `/import`.
 
 Build locally (Python 3.12, no dependencies):
@@ -297,8 +314,8 @@ ver [`docs/source-study-2026-10-20.md`](docs/source-study-2026-10-20.md). La all
 repositorio excluye siempre el rango de descarga de GitHub, los DNS públicos y los rangos de Cloudflare.
 
 **Requisitos:** RouterOS **7.21 o superior** (probado en CHR 7.24.5), listas de interfaces **`WAN`**
-y **`LAN`**, y algo de RAM libre: unos 7–12 MiB por lista (~39k entradas), el doble durante unos
-segundos en cada actualización.
+y **`LAN`**, y algo de RAM libre: medido en un CHR de 256 MiB con una lista de 40k entradas, unos 36,7 MiB
+libres con una lista y nunca menos de 30,5 MiB durante una actualización (dos listas unos 25 segundos).
 
 ### Instalación
 
@@ -309,8 +326,25 @@ segundos en cada actualización.
 Crea seis reglas `MBL:` arriba del todo en `/ip firewall raw`, las listas alternas `mbl-a` / `mbl-b`,
 la allowlist `mbl-allow` (con las IPs de administración actuales como `MBL: admin`), el script
 `mbl-update` y los schedulers `mbl-daily` (una vez al día, a hora aleatoria) y `mbl-boot` (recarga
-`mbl-last.rsc` al arrancar). Además activa el componente `fetch` en el almacén de certificados
+`mbl-last.txt` al arrancar). Además activa el componente `fetch` en el almacén de certificados
 integrado (`builtin-trust-store`). Se puede volver a ejecutar sin duplicar nada.
+
+**Cómo funciona en el router:** descarga `routeros-full.txt`, lo lee con `/file read` en trozos
+de 32 KiB y valida cada línea (IPv4 o CIDR con prefijo de 8 a 32); solo añade direcciones. Nunca
+importa ni ejecuta el contenido del fichero. Si falta la cabecera o el pie, no coinciden los
+conteos, hay más de un 1 % de líneas inválidas o quedan menos de 1000 entradas, se rechaza la
+carga y se conserva la lista activa. El log indica el motivo en `MBL: <fichero> rejected (<motivo>),
+active list kept`: `no header`, `bad header`, `no footer`, `header/footer mismatch`,
+`count mismatch`, `too many invalid lines (N)`, `too few entries (N)` o `read error`. Medido en un CHR 7.24.5 (1 vCPU, 256 MiB): 40.000 entradas
+en unos 25 s.
+
+**Ficheros publicados:** `routeros-full.txt` (formato del router, con cabecera y pie),
+`blocklist.rsc` (**legado** para routers con v2, se mantiene al menos hasta 2027-04-30) y
+`blocklist.txt` (una entrada por línea, sin cabecera, para otros firewalls).
+
+**Actualizar desde la v2:** vuelve a ejecutar el mismo comando de instalación. La lista antigua
+sigue activa mientras carga la primera lista v3, y los `mbl-*.rsc` antiguos se borran solos tras la
+primera carga v3 correcta (log `MBL: removed v2 files`).
 
 > [!TIP]
 > **¿Error de certificado en el comando?** En RouterOS 7.21–7.23, o con un almacén de confianza

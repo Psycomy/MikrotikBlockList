@@ -1,4 +1,4 @@
-# MikrotikBlockList v2 - RouterOS v7 uninstaller
+# MikrotikBlockList v3 - RouterOS v7 uninstaller
 # https://github.com/Psycomy/MikrotikBlockList
 #
 # Usage:
@@ -17,7 +17,7 @@
 /ip firewall address-list remove [find where list="mbl-b"]
 /ip firewall address-list remove [find where list="mbl-allow" and comment="MBL: admin"]
 # mbl files: RAM root (download) and flash/ (boot copy) on devices that have it
-/file remove [find where name~"^(flash/)?mbl-.*\\.rsc\$"]
+/file remove [find where name~"^(flash/)?mbl-.*\\.(rsc|txt)\$"]
 /system script environment remove [find where name~"^mbl"]
 /file remove [find where name="uninstall.rsc" or name="flash/uninstall.rsc"]
 :log info "MBL: uninstalled"
