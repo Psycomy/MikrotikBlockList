@@ -179,3 +179,60 @@ cabecera editada, subidas como `mbl-last.rsc` y cargadas en modo boot (`:global 
 | `/system script run mbl-update` normal después | OK: lista actual en `mbl-b`, sin aviso; `mbl-last.rsc` vuelve a la cabecera actual; lock liberado (`mblRunning=false`) |
 
 Estado final: instalado con `lists`, reglas en `mbl-b` (32557 entradas).
+
+## 7. Pruebas automáticas (CI)
+
+El workflow `.github/workflows/routeros-e2e.yml` arranca un CHR desechable con QEMU/KVM en
+`ubuntu-latest` y ejecuta `tests/e2e/test_routeros.py` contra el `routeros/install.rsc` sin
+modificar. Se lanza en los PR que tocan `routeros/**`, `mbl/render.py`, `tests/e2e/**` o el propio
+workflow; cada lunes (cron `41 5 * * 1`) contra la **última estable** (sin checksum: el sha256
+calculado queda en el *summary*), y a mano con `workflow_dispatch` (input `chr_version`, vacío =
+la fijada). Si falla, se sube el artefacto `routeros-e2e-logs` con `console.log` (consola serie),
+`qemu.log` y `router-log.txt` (`/log print`).
+
+Los tests nunca corren en `python -m unittest discover` normal: se saltan salvo con `MBL_E2E=1`.
+
+### En local
+
+Hace falta `qemu-system-x86_64`, `qemu-img`, `ssh`/`scp`, `openssl`, `unzip` y acceso a `/dev/kvm`.
+
+```bash
+MBL_E2E=1 python -m unittest tests.e2e.test_routeros -v
+```
+
+Variables opcionales: `MBL_E2E_CACHE` (caché de la imagen, por defecto `<tmp>/mbl-e2e-cache`),
+`MBL_E2E_CHR_VERSION` / `MBL_E2E_CHR_SHA256` (sustituyen a la versión fijada; SHA vacío = sin
+comprobar) y `MBL_E2E_ARTIFACTS=<dir>` (deja ahí los logs al terminar).
+
+### Contra el CHR de Proxmox
+
+Sin arrancar QEMU, por clave SSH (nunca contraseña). **Destructivo**: reinstala MBL, reinicia el
+router y termina ejecutando `uninstall.rsc`.
+
+```bash
+MBL_E2E=1 MBL_E2E_SSH=admin@192.168.33.118 MBL_E2E_DESTRUCTIVE=1 \
+  python -m unittest tests.e2e.test_routeros -v     # opcional: MBL_E2E_KEY=~/.ssh/id_ed25519
+```
+
+### Qué cubre cada caso
+
+Los casos comparten un router y corren en orden.
+
+| Caso | Cubre |
+|---|---|
+| `test_01_clean_install` | Instalación limpia: reglas `MBL:`, schedulers `mbl-daily` y `mbl-boot`, ≥1000 entradas |
+| `test_02_update_alternates` | `mbl-update` alterna entre `mbl-a` y `mbl-b` |
+| `test_03_truncated_keeps_active` | Una lista truncada se rechaza y la activa se conserva |
+| `test_04_dead_url_keeps_active` | Con la URL caída se conserva la lista activa |
+| `test_05_reboot_reloads` | Tras reiniciar, el modo boot recarga la lista |
+| `test_06_flash_path` | Equipos con `flash/`: copia de seguridad `mbl-last.rsc` |
+| `test_07_reinstall_no_duplicates` | Reinstalar no duplica reglas ni schedulers |
+| `test_08_uninstall_clean` | `uninstall.rsc` deja el router limpio |
+| `test_09_default_url_without_override` | Sin `mblUrlBase`, el instalador usa la URL de `lists` |
+
+### Subir la versión fijada
+
+1. Mira la última estable: `curl -s https://upgrade.mikrotik.com/routeros/NEWESTa7.stable`.
+2. Descarga `https://download.mikrotik.com/routeros/<ver>/chr-<ver>.img.zip` y calcula `sha256sum`.
+3. Escribe `<ver> <sha256>` en `tests/e2e/chr-version.txt`.
+4. Lanza el workflow (`workflow_dispatch`) en la rama y comprueba que queda en verde.

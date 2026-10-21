@@ -196,6 +196,26 @@ class TlsServer:
             self._tmp = None
 
 
+class _TeeSocket:
+    """Socket wrapper that appends everything received to a log file."""
+
+    def __init__(self, sock: socket.socket, log_path: Path):
+        self._sock = sock
+        self._log = open(log_path, "ab", buffering=0)
+
+    def recv(self, n: int) -> bytes:
+        data = self._sock.recv(n)
+        self._log.write(data)
+        return data
+
+    def close(self) -> None:
+        self._sock.close()
+        self._log.close()
+
+    def __getattr__(self, name):
+        return getattr(self._sock, name)
+
+
 def _expect(sock: socket.socket, pattern: bytes, timeout: float) -> bytes:
     """Read from `sock` until regex `pattern` matches; return everything read."""
     deadline = time.monotonic() + timeout
@@ -279,6 +299,7 @@ class Chr:
                 start_new_session=True,
             )
         self._sock_path = sock_path
+        self.console_log = workdir / "console.log"
 
     def _check_alive(self) -> None:
         if self._proc is not None and self._proc.poll() is not None:
@@ -302,7 +323,7 @@ class Chr:
             try:
                 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 s.connect(self._sock_path)
-                self._sock = s
+                self._sock = _TeeSocket(s, self.console_log)
             except OSError:
                 s.close()
                 time.sleep(0.2)

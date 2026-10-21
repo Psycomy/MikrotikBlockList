@@ -11,6 +11,11 @@ finally runs uninstall.rsc, so any previous MBL installation there is gone.
 It therefore also requires MBL_E2E_DESTRUCTIVE=1; without it the class is
 skipped. A best-effort uninstall also runs if a case aborts early.
 
+Other environment variables: MBL_E2E_CHR_VERSION / MBL_E2E_CHR_SHA256 override the
+pinned tests/e2e/chr-version.txt (an empty SHA256 skips the checksum), and
+MBL_E2E_ARTIFACTS=<dir> receives console.log, qemu.log and router-log.txt (the
+router's /log print) when the run ends, for CI failure artifacts.
+
 The cases share one router and run in order (test_01 ... test_09).
 """
 from __future__ import annotations
@@ -98,11 +103,16 @@ class RouterOsTest(unittest.TestCase):
             cls.chr.wait_ssh(30)
         else:
             version, sha256 = (REPO / "tests/e2e/chr-version.txt").read_text().split()
+            if os.environ.get("MBL_E2E_CHR_VERSION"):
+                version = os.environ["MBL_E2E_CHR_VERSION"]
+                sha256 = os.environ.get("MBL_E2E_CHR_SHA256") or None
             cache = Path(os.environ.get("MBL_E2E_CACHE")
                          or Path(tempfile.gettempdir()) / "mbl-e2e-cache")
             image = ensure_image(version, sha256, cache)
             cls.chr = Chr.boot(image, tmpdir / "vm")
+            cls.addClassCleanup(cls._save_vm_logs, tmpdir / "vm")
             cls.addClassCleanup(cls.chr.stop)
+        cls.addClassCleanup(cls._save_router_log)
 
         cls.addClassCleanup(cls._remove_test_ca)
         cls._remove_test_ca()
@@ -122,6 +132,30 @@ class RouterOsTest(unittest.TestCase):
             cls.chr.run("/import uninstall.rsc", timeout=300)
         with suppress(ChrError, OSError):
             cls.chr.run(':global mblUrlBase ""')
+
+    @classmethod
+    def _artifacts(cls) -> Path | None:
+        d = os.environ.get("MBL_E2E_ARTIFACTS")
+        if not d:
+            return None
+        Path(d).mkdir(parents=True, exist_ok=True)
+        return Path(d)
+
+    @classmethod
+    def _save_router_log(cls):
+        out = cls._artifacts()
+        if out is not None:
+            with suppress(ChrError, OSError):
+                (out / "router-log.txt").write_text(cls.chr.run("/log print", timeout=60))
+
+    @classmethod
+    def _save_vm_logs(cls, vm_dir: Path):
+        """Runs after the VM stopped: keep its serial console and QEMU logs."""
+        out = cls._artifacts()
+        if out is not None:
+            for name in ("console.log", "qemu.log"):
+                with suppress(OSError):
+                    shutil.copyfile(vm_dir / name, out / name)
 
     @classmethod
     def _remove_test_ca(cls):
