@@ -6,6 +6,11 @@ MBL_E2E_SSH=user@host[:port] (and optionally MBL_E2E_KEY) it uses that CHR by
 SSH key instead; the HTTPS test server is then served on this host's LAN
 address as seen from that router.
 
+Existing-host mode is DESTRUCTIVE: it reinstalls MBL, reboots the router and
+finally runs uninstall.rsc, so any previous MBL installation there is gone.
+It therefore also requires MBL_E2E_DESTRUCTIVE=1; without it the class is
+skipped. A best-effort uninstall also runs if a case aborts early.
+
 The cases share one router and run in order (test_01 ... test_09).
 """
 from __future__ import annotations
@@ -17,12 +22,13 @@ import subprocess
 import tempfile
 import time
 import unittest
+from contextlib import suppress
 from datetime import datetime, timezone
 from ipaddress import IPv4Address, IPv4Network
 from pathlib import Path
 
 from mbl.render import write_outputs
-from tests.e2e.harness import Chr, TlsServer, ensure_image
+from tests.e2e.harness import Chr, ChrError, TlsServer, ensure_image
 
 REPO = Path(__file__).resolve().parents[2]
 ROUTEROS = REPO / "routeros"
@@ -58,6 +64,13 @@ class RouterOsTest(unittest.TestCase):
     def setUpClass(cls):
         if os.environ.get("MBL_E2E") != "1":
             raise unittest.SkipTest("set MBL_E2E=1 to run the CHR end-to-end tests")
+        ssh = os.environ.get("MBL_E2E_SSH")
+        if ssh and os.environ.get("MBL_E2E_DESTRUCTIVE") != "1":
+            raise unittest.SkipTest(
+                "MBL_E2E_SSH mode reinstalls, reboots and finally uninstalls MBL on "
+                f"{ssh} (a previous MBL install there is lost); "
+                "set MBL_E2E_DESTRUCTIVE=1 to allow it"
+            )
         tmp = tempfile.TemporaryDirectory(prefix="mbl-e2e-")
         cls.addClassCleanup(tmp.cleanup)
         tmpdir = Path(tmp.name)
@@ -68,7 +81,6 @@ class RouterOsTest(unittest.TestCase):
         assert lines[-2:] == [":global mblImportOk true\n", "# MBL-END\n"], lines[-2:]
         (served / "blocklist-truncated.rsc").write_text("".join(lines[:-2]))
 
-        ssh = os.environ.get("MBL_E2E_SSH")
         if ssh:
             key = os.environ.get("MBL_E2E_KEY")
             cls.chr = Chr.existing(ssh, Path(key).expanduser() if key else None)
@@ -97,6 +109,19 @@ class RouterOsTest(unittest.TestCase):
         cls.chr.upload(cls.server.ca_pem, "ca.crt")
         cls.chr.run("/certificate import file-name=ca.crt trusted=yes passphrase=\"\"")
         cls.chr.run('/file remove [find where name="ca.crt"]')
+        if ssh:
+            # Never leave the user's router half-installed or pointing at the
+            # (gone) test server if a case aborts early. Runs before the CA
+            # removal and the server stop (cleanups are LIFO).
+            cls.addClassCleanup(cls._best_effort_uninstall)
+
+    @classmethod
+    def _best_effort_uninstall(cls):
+        with suppress(ChrError, OSError):
+            cls.chr.upload(ROUTEROS / "uninstall.rsc", "uninstall.rsc")
+            cls.chr.run("/import uninstall.rsc", timeout=300)
+        with suppress(ChrError, OSError):
+            cls.chr.run(':global mblUrlBase ""')
 
     @classmethod
     def _remove_test_ca(cls):
@@ -167,15 +192,19 @@ class RouterOsTest(unittest.TestCase):
     def update_source(self) -> str:
         return self.chr.run(':put [/system script get [find where name="mbl-update"] source]')
 
-    def assert_failed_update_keeps_active(self) -> None:
+    def assert_failed_update_keeps_active(self, path: str, error: str) -> None:
+        """mbl-update requests `path`, fails with an `error` log line, keeps the list."""
         active, n = self.active_list(), self.count(self.active_list())
         token = self.mark()
+        self.server.requests.clear()
         self.update()
         self.assertEqual(self.active_list(), active)
         self.assertEqual(self.count(active), n)
-        errors = [ln for ln in self.log_after(token).splitlines()
+        self.assertIn(path, self.server.requests)
+        log = self.log_after(token)
+        errors = [ln for ln in log.splitlines()
                   if "error" in ln.split(" ", 1)[0] and "MBL:" in ln]
-        self.assertTrue(errors, self.log_after(token))
+        self.assertTrue(any(error in ln for ln in errors), log)
 
     # -- cases --------------------------------------------------------------
 
@@ -196,18 +225,24 @@ class RouterOsTest(unittest.TestCase):
         self.assertGreaterEqual(self.count(new), MIN_ENTRIES)
 
     def test_03_truncated_keeps_active(self):
-        self.set_update_path("/blocklist.rsc", "/blocklist-truncated.rsc")
         try:
+            self.set_update_path("/blocklist.rsc", "/blocklist-truncated.rsc")
             self.assertIn("/blocklist-truncated.rsc", self.update_source())
-            self.assert_failed_update_keeps_active()
-        finally:
-            self.set_update_path("/blocklist-truncated.rsc", "/blocklist.rsc")
+            # the footer (mblImportOk) is missing: the import is rejected
+            self.assert_failed_update_keeps_active(
+                "/blocklist-truncated.rsc", "MBL: import of mbl-new.rsc failed (complete=false")
+        except BaseException:
+            # restore on a best-effort basis without masking the real error
+            with suppress(ChrError):
+                self.set_update_path("/blocklist-truncated.rsc", "/blocklist.rsc")
+            raise
+        self.set_update_path("/blocklist-truncated.rsc", "/blocklist.rsc")
         self.assertIn(f"{self.base}/blocklist.rsc", self.update_source())
 
     def test_04_dead_url_keeps_active(self):
         self.server.fail_paths = {"/blocklist.rsc"}
         try:
-            self.assert_failed_update_keeps_active()
+            self.assert_failed_update_keeps_active("/blocklist.rsc", "MBL: download failed (")
         finally:
             self.server.fail_paths = set()
 
@@ -229,6 +264,9 @@ class RouterOsTest(unittest.TestCase):
             time.sleep(3)
 
     def test_06_flash_path(self):
+        if self.num("/file", 'name="flash"') > 0:
+            # never touch a real flash/ (it would be removed at the end)
+            self.skipTest("a flash directory already exists on this router")
         self.chr.run("/file add type=directory name=flash")
         try:
             self.update()

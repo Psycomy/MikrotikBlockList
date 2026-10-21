@@ -118,6 +118,8 @@ class TlsServer:
         self.root = Path(root)
         self.extra_ips = tuple(extra_ips)
         self.fail_paths: set[str] = set()
+        # Paths of every GET received, in order (query string stripped).
+        self.requests: list[str] = []
         self.port = free_port()
         self._tmp = tempfile.TemporaryDirectory(prefix="mbl-tls-")
         self._dir = Path(self._tmp.name)
@@ -165,7 +167,9 @@ class TlsServer:
                 pass
 
             def do_GET(self):
-                if self.path.split("?", 1)[0] in server.fail_paths:
+                path = self.path.split("?", 1)[0]
+                server.requests.append(path)
+                if path in server.fail_paths:
                     self.send_error(404)
                     return
                 super().do_GET()
