@@ -1,4 +1,4 @@
-# MikrotikBlockList v2 - RouterOS v7 installer
+# MikrotikBlockList v3 - RouterOS v7 installer
 # https://github.com/Psycomy/MikrotikBlockList
 # For home / non-commercial use only (see source licenses in README)
 #
@@ -13,15 +13,18 @@
 # :error aborts the whole installer.
 {
 # ---------------------------------------------------------------- settings
-# Blocklist URL. Forks: change this line only.
-:local mblUrl "https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/lists/blocklist.rsc"
+# Blocklist URL base. Forks: change this line only.
+:local mblBase "https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/lists"
 # Test/dev only: set :global mblUrlBase before /import to use another server.
 :global mblUrlBase
 :if ([:len $mblUrlBase] > 0) do={
-  :set mblUrl ($mblUrlBase . "/blocklist.rsc")
+  :set mblBase $mblUrlBase
   :put "MBL: using test URL base $mblUrlBase"
   :log warning "MBL: using test URL base $mblUrlBase"
 }
+# The router downloads a plain list (one address per line) and validates
+# every line as data; nothing downloaded is ever executed.
+:local mblUrl ($mblBase . "/routeros-full.txt")
 # Minimum RouterOS version (major.minor). 7.21 is the first release with the
 # per-service built-in CA store (/certificate settings builtin-trust-store,
 # 7.21 changelog). Tested on CHR 7.24.5.
@@ -77,6 +80,8 @@
 # ------------------------------------------ 3. remove a previous installation
 # The address lists are kept so a reinstall never leaves the router
 # unprotected: the new rules point at the list that already has entries.
+# Files are kept too: v2 boot copies (mbl-*.rsc) are removed by mbl-update
+# only after its first successful load.
 :local prevList ""
 :local prevIn [/ip firewall raw find where comment="MBL: in"]
 :if ([:len $prevIn] > 0) do={ :set prevList [/ip firewall raw get ($prevIn->0) src-address-list] }
@@ -107,19 +112,24 @@
 # The body is stored verbatim; @MBL_URL@ is replaced with $mblUrl below.
 /system script add name=mbl-update policy=ftp,read,write,policy,test \
   dont-require-permissions=no comment="MBL: blocklist updater" source={
-# MikrotikBlockList v2 updater - installed by install.rsc, do not edit.
-# Normal run: download, validate, import into the inactive list (mbl-a or
-# mbl-b), switch the MBL rules to it, empty the old list.
-# Boot run (:global mblBoot true): same, but from mbl-last.rsc, no download.
+# MikrotikBlockList v3 updater - installed by install.rsc, do not edit.
+# Normal run: download the plain list, read it in chunks and add each valid
+# line to the inactive list (mbl-a or mbl-b), switch the MBL rules to it,
+# empty the old list.
+# Boot run (:global mblBoot true): same, but from mbl-last.txt, no download.
+# Nothing read from the file is ever executed: each line is only a value,
+# checked against the a.b.c.d[/p] form, :toip and the prefix range.
 :local url "@MBL_URL@"
 :local minSize 100000
 :local minEntries 1000
+# /file read returns at most 32768 bytes per call (RouterOS 7.24)
+:local chunkSize 32768
+# a longer line cannot be an address; it is dropped as one invalid line
+:local maxLine 255
 # warn when the loaded list was generated more than this many days ago
 :local maxAgeDays 3
 :global mblRunning
 :global mblBoot
-:global mblTarget
-:global mblImportOk
 :global mblLastOk
 # Rename file $1 to $2 (/file set name=), falling back to copy + remove.
 # Run through :parse so a release lacking a command fails at run time,
@@ -168,6 +178,14 @@
   :if ($m <= 2) do={ :set y ($y - 1); :set m ($m + 12) }
   :return ($y * 365 + $y / 4 - $y / 100 + $y / 400 + (153 * ($m - 3) + 2) / 5 + $d - 1)
 }
+# Value of "key=" in header line $1 (fields separated by spaces), "" if absent.
+:local mblField do={
+  :local h (" " . $1 . " ")
+  :local p [:find $h (" " . $2 . "=")]
+  :if ([:typeof $p] != "num") do={ :return "" }
+  :local v [:pick $h ($p + [:len $2] + 2) [:len $h]]
+  :return [:pick $v 0 [:find $v " "]]
+}
 :local boot ($mblBoot = true)
 :set mblBoot false
 :if ($mblRunning = true) do={
@@ -183,9 +201,9 @@
     # a file that may be rejected); only a validated file is copied to flash/.
     :local dir ""
     :if ([:len [/file find where name="flash"]] > 0) do={ :set dir "flash/" }
-    :local newFile "mbl-new.rsc"
-    :local lastFile ($dir . "mbl-last.rsc")
-    :local tmpFile ($dir . "mbl-tmp.rsc")
+    :local newFile "mbl-new.txt"
+    :local lastFile ($dir . "mbl-last.txt")
+    :local tmpFile ($dir . "mbl-tmp.txt")
     # ---- source file
     :local fname $newFile
     :if ($boot) do={
@@ -222,30 +240,7 @@
       :error "MBL: abort"
     }
 
-    # ---- header: refuse anything that is not a MikrotikBlockList file
-    # (e.g. an HTML error page) before importing it. /file read goes through
-    # :parse; if a release lacks it the check is skipped with a warning (import
-    # still needs the mblImportOk footer).
-    :local gen "unknown"
-    :local hdr ""
-    :do {
-      :local rd [:parse (":return [/file read file=\"" . $fname . "\" offset=0 chunk-size=300 as-value]")]
-      :local r [$rd]
-      :set hdr ($r->"data")
-    } on-error={}
-    :if ([:len $hdr] > 0) do={
-      :if ([:pick $hdr 0 19] != "# MikrotikBlockList") do={
-        :if (!$boot) do={ /file remove [find where name=$fname] }
-        :log error "MBL: $fname is not a MikrotikBlockList file, list not changed"
-        :error "MBL: abort"
-      }
-      :local gp [:find $hdr "generated: "]
-      :if ([:typeof $gp] = "num") do={ :set gen [:pick $hdr ($gp + 11) ($gp + 31)] }
-    } else={
-      :log warning "MBL: header check skipped (/file read unavailable or failed on $fname)"
-    }
-
-    # ---- import into the list the rules are NOT using
+    # ---- load into the list the rules are NOT using
     :local target "mbl-a"
     :local inRule [/ip firewall raw find where comment="MBL: in"]
     :if ([:len $inRule] > 0) do={
@@ -255,21 +250,125 @@
     }
     :local old "mbl-a"
     :if ($target = "mbl-a") do={ :set old "mbl-b" }
-    :set mblTarget $target
-    :set mblImportOk false
     /ip firewall address-list remove [find where list=$target]
-    :do {
-      /import file-name=$fname verbose=no
-    } on-error={ :log warning "MBL: /import of $fname raised an error" }
 
-    # ---- validate (the file sets mblImportOk on its last line)
-    :local n [:len [/ip firewall address-list find where list=$target]]
-    :if ($mblImportOk != true || $n < $minEntries) do={
+    # Read the file in chunks. A line cut at the end of a chunk is carried
+    # over to the next one. $reason is set on the first fatal problem.
+    :local reason ""
+    :local gen "unknown"
+    :local entries -1
+    :local footer -1
+    :local first true
+    :local skip false
+    :local added 0
+    :local bad 0
+    :local off 0
+    :local carry ""
+    :while ($off < $fsize && $reason = "") do={
+      :local d ""
+      :do {
+        :set d ([/file read file=$fname offset=$off chunk-size=$chunkSize as-value]->"data")
+      } on-error={}
+      :if ([:len $d] = 0) do={
+        # read error: stop here, the missing footer rejects the file
+        :set off $fsize
+      } else={
+        :set off ($off + [:len $d])
+      }
+      :local buf ($carry . $d)
+      # the last line may lack its "\n"
+      :if ($off >= $fsize && [:len $buf] > 0 && [:pick $buf ([:len $buf] - 1)] != "\n") do={
+        :set buf ($buf . "\n")
+      }
+      :local s 0
+      :local e [:find $buf "\n" -1]
+      :while ([:typeof $e] = "num" && $reason = "") do={
+        :local ln [:pick $buf $s $e]
+        :set s ($e + 1)
+        :set e [:find $buf "\n" ($s - 1)]
+        :if ($skip) do={
+          # rest of an over-long line, already counted
+          :set skip false
+        } else={
+          # strip trailing "\r" and spaces
+          :local n [:len $ln]
+          :while ($n > 0 && ([:pick $ln ($n - 1)] = "\r" || [:pick $ln ($n - 1)] = " ")) do={ :set n ($n - 1) }
+          :if ($n < [:len $ln]) do={ :set ln [:pick $ln 0 $n] }
+          :if ($first) do={
+            :set first false
+            :if ([:pick $ln 0 20] != "# MikrotikBlockList ") do={
+              :set reason "no header"
+            } else={
+              :local en [$mblField $ln "entries"]
+              :if ([$mblField $ln "format"] != "1" || [$mblField $ln "family"] != "ipv4" || !($en ~ "^[0-9]+\$")) do={
+                :set reason "bad header"
+              } else={
+                :set entries [:tonum $en]
+                :local g [$mblField $ln "generated"]
+                :if ([:len $g] > 0) do={ :set gen $g }
+              }
+            }
+          } else={
+            :if ($footer < 0 && [:pick $ln 0 18] = "# MBL-END entries=" && [:pick $ln 18 [:len $ln]] ~ "^[0-9]+\$") do={
+              :set footer [:tonum [:pick $ln 18 [:len $ln]]]
+            } else={
+              :local ok false
+              :if ($footer < 0 && $ln ~ "^[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}(/[0-9]{1,2})?\$") do={
+                :local sl [:find $ln "/"]
+                :local ip $ln
+                :local plen 32
+                :if ([:typeof $sl] = "num") do={
+                  :set ip [:pick $ln 0 $sl]
+                  :set plen [:tonum [:pick $ln ($sl + 1) [:len $ln]]]
+                }
+                :if ([:typeof [:toip $ip]] = "ip" && $plen >= 8 && $plen <= 32) do={
+                  :do {
+                    /ip firewall address-list add list=$target address=$ln timeout=7d
+                    :set added ($added + 1)
+                    :set ok true
+                  } on-error={}
+                }
+              }
+              :if (!$ok) do={ :set bad ($bad + 1) }
+            }
+          }
+        }
+      }
+      :set carry [:pick $buf $s [:len $buf]]
+      :if ([:len $carry] > $maxLine) do={
+        # an over-long first line cannot be the header
+        :if ($first) do={ :set reason "no header" }
+        :if (!$skip) do={ :set bad ($bad + 1) }
+        :set carry ""
+        :set skip true
+      }
+    }
+    :if ($reason = "") do={
+      :if ($footer < 0) do={
+        :set reason "no footer"
+      } else={
+        :if ($footer != $entries) do={
+          :set reason "count mismatch"
+        } else={
+          :if (($bad * 100) > $entries) do={
+            :set reason "too many invalid lines ($bad)"
+          } else={
+            :if ($added != $entries) do={
+              :set reason "count mismatch"
+            } else={
+              :if ($added < $minEntries) do={ :set reason "too few entries ($added)" }
+            }
+          }
+        }
+      }
+    }
+    :if ($reason != "") do={
       /ip firewall address-list remove [find where list=$target]
       :if (!$boot) do={ /file remove [find where name=$fname] }
-      :log error "MBL: import of $fname failed (complete=$mblImportOk, entries=$n), active list kept"
+      :log error "MBL: $fname rejected ($reason), active list kept"
       :error "MBL: abort"
     }
+    :local n $added
 
     # ---- switch rules, then empty the old list
     /ip firewall raw set [find where comment="MBL: in"] src-address-list=$target
@@ -319,6 +418,14 @@
 
     :set mblLastOk true
     :log info "MBL: loaded $n entries into $target (list generated $gen)"
+
+    # ---- v2 leftovers: its boot copies are only removed now that a v3
+    # load has succeeded, so an upgrade never loses the last good copy.
+    :local v2 [/file find where name~"^(flash/)?mbl-.*\\.rsc\$"]
+    :if ([:len $v2] > 0) do={
+      /file remove $v2
+      :log info "MBL: removed v2 files"
+    }
 
     # ---- stale list: the list is loaded either way; this only warns, e.g.
     # when the GitHub Action has stopped. Errors here are ignored so they can

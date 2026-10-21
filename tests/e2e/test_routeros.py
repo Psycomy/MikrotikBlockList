@@ -40,16 +40,18 @@ from tests.e2e.harness import Chr, ChrError, TlsServer, ensure_image
 REPO = Path(__file__).resolve().parents[2]
 ROUTEROS = REPO / "routeros"
 DEFAULT_HOST = "raw.githubusercontent.com"
-DEFAULT_URL = f"https://{DEFAULT_HOST}/Psycomy/MikrotikBlockList/lists/blocklist.rsc"
+DEFAULT_URL = f"https://{DEFAULT_HOST}/Psycomy/MikrotikBlockList/lists/routeros-full.txt"
 UNREACHABLE = "192.0.2.1"  # TEST-NET-1 (RFC 5737)
 DNS_COMMENT = "MBLTEST"
 TEST_CA_CN = "MBL Test CA"
-LIST_SIZE = 5000
+# routeros-full.txt must reach mbl-update's 100,000-byte minimum size:
+# 10,000 entries from 45.0.0.0 are ~113 KB (5,000 would be ~55 KB).
+LIST_SIZE = 10000
 MIN_ENTRIES = 1000
 
 
 def _synthetic_list(out_dir: Path) -> None:
-    """5,000 consecutive global /32s from 45.0.0.0; no real sources."""
+    """LIST_SIZE consecutive global /32s from 45.0.0.0; no real sources."""
     first = int(IPv4Address("45.0.0.0"))
     networks = [IPv4Network(IPv4Address(first + i)) for i in range(LIST_SIZE)]
     write_outputs(out_dir, networks, [], datetime.now(timezone.utc))
@@ -87,9 +89,9 @@ class RouterOsTest(unittest.TestCase):
 
         served = tmpdir / "served"
         _synthetic_list(served)
-        lines = (served / "blocklist.rsc").read_text().splitlines(keepends=True)
-        assert lines[-2:] == [":global mblImportOk true\n", "# MBL-END\n"], lines[-2:]
-        (served / "blocklist-truncated.rsc").write_text("".join(lines[:-2]))
+        lines = (served / "routeros-full.txt").read_text().splitlines(keepends=True)
+        assert lines[-1] == f"# MBL-END entries={LIST_SIZE}\n", lines[-1]
+        (served / "routeros-full-truncated.txt").write_text("".join(lines[:-1]))
 
         if ssh:
             key = os.environ.get("MBL_E2E_KEY")
@@ -248,7 +250,8 @@ class RouterOsTest(unittest.TestCase):
         self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6, out)
         for name in ("mbl-daily", "mbl-boot"):
             self.assertEqual(self.num("/system scheduler", f'name="{name}"'), 1, name)
-        self.assertGreaterEqual(self.count(self.active_list()), MIN_ENTRIES)
+        # every line is loaded, including those cut between two /file read chunks
+        self.assertEqual(self.count(self.active_list()), LIST_SIZE)
         log = self.log()
         self.assertIn("MBL: installed", log)
         warning = f"MBL: using test URL base {self.base}"
@@ -262,27 +265,27 @@ class RouterOsTest(unittest.TestCase):
         new = self.active_list()
         self.assertEqual({old, new}, {"mbl-a", "mbl-b"})
         self.assertEqual(self.count(old), 0)
-        self.assertGreaterEqual(self.count(new), MIN_ENTRIES)
+        self.assertEqual(self.count(new), LIST_SIZE)
 
     def test_03_truncated_keeps_active(self):
         try:
-            self.set_update_path("/blocklist.rsc", "/blocklist-truncated.rsc")
-            self.assertIn("/blocklist-truncated.rsc", self.update_source())
-            # the footer (mblImportOk) is missing: the import is rejected
+            self.set_update_path("/routeros-full.txt", "/routeros-full-truncated.txt")
+            self.assertIn("/routeros-full-truncated.txt", self.update_source())
+            # the footer is missing: the file is rejected
             self.assert_failed_update_keeps_active(
-                "/blocklist-truncated.rsc", "MBL: import of mbl-new.rsc failed (complete=false")
+                "/routeros-full-truncated.txt", "MBL: mbl-new.txt rejected (no footer)")
         except BaseException:
             # restore on a best-effort basis without masking the real error
             with suppress(ChrError):
-                self.set_update_path("/blocklist-truncated.rsc", "/blocklist.rsc")
+                self.set_update_path("/routeros-full-truncated.txt", "/routeros-full.txt")
             raise
-        self.set_update_path("/blocklist-truncated.rsc", "/blocklist.rsc")
-        self.assertIn(f"{self.base}/blocklist.rsc", self.update_source())
+        self.set_update_path("/routeros-full-truncated.txt", "/routeros-full.txt")
+        self.assertIn(f"{self.base}/routeros-full.txt", self.update_source())
 
     def test_04_dead_url_keeps_active(self):
-        self.server.fail_paths = {"/blocklist.rsc"}
+        self.server.fail_paths = {"/routeros-full.txt"}
         try:
-            self.assert_failed_update_keeps_active("/blocklist.rsc", "MBL: download failed (")
+            self.assert_failed_update_keeps_active("/routeros-full.txt", "MBL: download failed (")
         finally:
             self.server.fail_paths = set()
 
@@ -310,7 +313,7 @@ class RouterOsTest(unittest.TestCase):
         self.chr.run("/file add type=directory name=flash")
         try:
             self.update()
-            self.assertEqual(self.num("/file", 'name="flash/mbl-last.rsc"'), 1,
+            self.assertEqual(self.num("/file", 'name="flash/mbl-last.txt"'), 1,
                              self.chr.run("/file print"))
             before = self.active_list()
             token = self.mark()
@@ -346,7 +349,7 @@ class RouterOsTest(unittest.TestCase):
         self.assertEqual(self.num("/system scheduler", 'name~"^mbl-"'), 0)
         self.assertEqual(self.count("mbl-a"), 0)
         self.assertEqual(self.count("mbl-b"), 0)
-        self.assertEqual(self.num("/file", 'name~"mbl-.*\\\\.rsc"'), 0,
+        self.assertEqual(self.num("/file", 'name~"mbl-.*\\\\.(rsc|txt)"'), 0,
                          self.chr.run("/file print"))
         self.assertEqual(self.num("/interface list", lists), 2)
         self.assertEqual(self.num("/interface list", lists), n_lists)
