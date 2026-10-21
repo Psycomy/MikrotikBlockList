@@ -3,7 +3,7 @@ import unittest
 from ipaddress import IPv4Network
 from pathlib import Path
 
-from mbl.sources import load_allowlist, load_sources
+from mbl.sources import VARIANTS, load_allowlist, load_sources
 
 
 def _write(tmp: str, text: str) -> Path:
@@ -47,6 +47,31 @@ class SourcesTest(unittest.TestCase):
         self.assertGreaterEqual(len(sources), 10)
         by_name = {s.name: s for s in sources}
         self.assertTrue(by_name["spamhaus-drop"].required)
+
+    def _load(self, extra):
+        text = ENTRY.format(name="a", fmt="plain", cat="attack", extra=extra)
+        with tempfile.TemporaryDirectory() as tmp:
+            return load_sources(_write(tmp, text))
+
+    def test_variants_default_full(self):
+        self.assertEqual(VARIANTS, ("full", "lite"))
+        self.assertEqual(self._load("")[0].variants, ("full",))
+        self.assertEqual(self._load('variants = ["lite", "full"]')[0].variants, ("lite", "full"))
+
+    def test_unknown_variant_rejected(self):
+        for extra in ('variants = ["full", "mini"]', "variants = []"):
+            with self.subTest(extra=extra):
+                with self.assertRaises(ValueError):
+                    self._load(extra)
+
+    def test_lite_requires_full(self):
+        with self.assertRaises(ValueError):
+            self._load('variants = ["lite"]')
+
+    def test_repo_catalog_lite_sources(self):
+        sources = load_sources(Path("sources.toml"))
+        lite = {s.name for s in sources if "lite" in s.variants}
+        self.assertEqual(lite, {"spamhaus-drop", "dshield", "et-compromised", "threatfox", "threatcluster"})
 
     def test_allowlist_parses(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -6,6 +6,7 @@ from pathlib import Path
 
 FORMATS = frozenset({"plain", "dshield", "threatfox_csv", "c2intel_csv", "csv"})
 CATEGORIES = frozenset({"attack", "c2"})
+VARIANTS = ("full", "lite")
 
 
 @dataclass(frozen=True)
@@ -17,6 +18,7 @@ class Source:
     enabled: bool = True
     required: bool = False
     license_note: str = ""
+    variants: tuple[str, ...] = ("full",)
 
 
 def load_sources(path: Path) -> list[Source]:
@@ -26,11 +28,19 @@ def load_sources(path: Path) -> list[Source]:
     seen: set[str] = set()
     result: list[Source] = []
     for entry in data.get("source", []):
+        entry = {**entry, "variants": tuple(entry["variants"])} if "variants" in entry else entry
         source = Source(**entry)
         if source.format not in FORMATS:
             raise ValueError(f"{source.name}: unknown format {source.format!r}")
         if source.category not in CATEGORIES:
             raise ValueError(f"{source.name}: unknown category {source.category!r}")
+        if not source.variants:
+            raise ValueError(f"{source.name}: variants must not be empty")
+        for variant in source.variants:
+            if variant not in VARIANTS:
+                raise ValueError(f"{source.name}: unknown variant {variant!r}")
+        if "lite" in source.variants and "full" not in source.variants:
+            raise ValueError(f"{source.name}: a lite source must also be full")
         if source.name in seen:
             raise ValueError(f"duplicate source name {source.name!r}")
         seen.add(source.name)

@@ -21,6 +21,7 @@ format = "plain"
 category = "attack"
 required = true
 license_note = "Free under Spamhaus DROP terms; no explicit redistribution grant - home use"
+variants = ["lite", "full"]
 
 [[source]]
 name = "et-compromised"
@@ -28,6 +29,7 @@ url = "https://rules.emergingthreats.net/blockrules/compromised-ips.txt"
 format = "plain"
 category = "attack"
 license_note = "Emerging Threats open rules, BSD-style terms"
+variants = ["lite", "full"]
 
 [[source]]
 name = "cins"
@@ -49,6 +51,7 @@ url = "https://www.dshield.org/block.txt"
 format = "dshield"
 category = "attack"
 license_note = "CC BY-NC-SA (non-commercial only, attribution)"
+variants = ["lite", "full"]
 
 [[source]]
 name = "ipsum-3"
@@ -77,6 +80,7 @@ url = "https://threatfox.abuse.ch/export/csv/ip-port/recent/"
 format = "threatfox_csv"
 category = "c2"
 license_note = "abuse.ch fair use, free; commercial use may need paid API"
+variants = ["lite", "full"]
 
 [[source]]
 name = "threatcluster"
@@ -84,6 +88,7 @@ url = "https://threatcluster.io/api/iocs/public/ips.txt"
 format = "plain"
 category = "c2"
 license_note = "ThreatCluster public IOC feed; no license stated - check source terms"
+variants = ["lite", "full"]
 
 [[source]]
 name = "datashield"
