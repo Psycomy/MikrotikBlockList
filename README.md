@@ -51,7 +51,8 @@ flowchart LR
    (Spamhaus DROP) must succeed. For an expected jump (e.g. a new source), a maintainer can run
    the workflow by hand (*Actions → build → Run workflow* on `main`) with **allow_growth**
    ticked, which skips only the 2x check (locally: `python -m mbl build --allow-growth`).
-   If either variant fails, nothing is published.
+   If either variant fails, nothing is published. A drop no larger than the previous entries of
+   optional sources that failed this run is accepted with a warning (only the drop check is skipped).
 3. The result goes to the orphan [`lists`](https://github.com/Psycomy/MikrotikBlockList/tree/lists)
    branch, overwritten each time with a single commit.
 4. Your router fetches `routeros-full.txt` (or `routeros-lite.txt`) over HTTPS (`check-certificate=yes`), reads it as plain
@@ -398,6 +399,8 @@ poca RAM o si solo quieres bloquear C2 y los rangos de ataque más graves. Para 
 - Límites de publicación: `full` 5.000 a 150.000 entradas, `lite` 1.000 a 20.000; si falla cualquiera
   de las dos, no se publica nada. Tamaño mínimo del fichero en el router: 100.000 bytes (`full`) y
   20.000 (`lite`).
+- Una caída no mayor que las entradas anteriores de las fuentes opcionales que fallan en esa
+  ejecución se acepta con un aviso (solo se omite la comprobación de caída).
 
 **Ficheros publicados:** `routeros-full.txt` y `routeros-lite.txt` (formato del router, con cabecera
 y pie), `blocklist.rsc` (**legado** para routers con v2, solo `full`, se mantiene al menos hasta

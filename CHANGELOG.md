@@ -18,7 +18,8 @@ published list carries it as `script=<version>` in its header.
   `total` stays equal to `full`.
 - Per-variant safety checks: `full` 5,000 to 150,000 entries, `lite` 1,000 to 20,000; in both, no
   drop over 50% and no growth over 2x (`--allow-growth` applies to both) against that variant's
-  previous total. If either variant fails, nothing is published.
+  previous total. If either variant fails, nothing is published. A drop no larger than the previous
+  entries of optional sources that failed this run skips only the drop check, with a warning.
 - Installer: `:global mblVariant "lite"; ` before the one-liner installs `lite`; `"full"` switches
   back. With the global empty, the installer keeps the installed variant (or uses `full`). Any other
   value stops with `:error` before changing anything.
