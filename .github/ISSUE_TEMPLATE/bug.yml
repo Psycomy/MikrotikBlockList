@@ -1,0 +1,43 @@
+name: Bug report
+description: The installer, the update script or the build misbehaves
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: input
+    id: script
+    attributes:
+      label: Script version
+      description: "The final install message, e.g. `MBL: installed (script 3.3.1, variant full, ipv6 no)`."
+      placeholder: "MBL: installed (script 3.3.1, variant full, ipv6 no)"
+    validations:
+      required: true
+  - type: input
+    id: routeros
+    attributes:
+      label: RouterOS version
+      description: "Output of `/system resource print` (version line)."
+      placeholder: "7.24.5"
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Router model
+      placeholder: "hAP ax3, CHR, ..."
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: 'Output of `/log print where message~"MBL"`.'
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What you did, what you expected and what happened.
+    validations:
+      required: true

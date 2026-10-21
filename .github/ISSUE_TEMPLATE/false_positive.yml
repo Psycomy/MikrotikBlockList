@@ -1,0 +1,68 @@
+name: False positive
+description: A legitimate IP or network is being blocked by the published list
+title: "[False positive] "
+labels: ["false-positive"]
+body:
+  - type: input
+    id: address
+    attributes:
+      label: IP or CIDR
+      description: The address or network that is wrongly blocked.
+      placeholder: 203.0.113.10 or 203.0.113.0/24
+    validations:
+      required: true
+  - type: dropdown
+    id: variant
+    attributes:
+      label: Variant
+      options:
+        - full
+        - lite
+    validations:
+      required: true
+  - type: dropdown
+    id: family
+    attributes:
+      label: Family
+      options:
+        - IPv4
+        - IPv6
+    validations:
+      required: true
+  - type: dropdown
+    id: source
+    attributes:
+      label: Source (if known)
+      description: "Which source lists it? Check https://github.com/Psycomy/MikrotikBlockList/tree/lists if unsure."
+      options:
+        - unknown
+        - spamhaus-drop
+        - spamhaus-drop-v6
+        - et-compromised
+        - cins
+        - blocklist-de
+        - dshield
+        - ipsum-3
+        - binarydefense
+        - turris-greylist
+        - threatfox
+        - threatcluster
+        - datashield
+        - abuseipdb-s100
+      default: 0
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: What stopped working
+      description: What service or device cannot be reached, and since when.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I checked that this is not caused by my own local allowlist or other firewall rules.
+          required: true
