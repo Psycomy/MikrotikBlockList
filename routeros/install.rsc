@@ -15,6 +15,13 @@
 # ---------------------------------------------------------------- settings
 # Blocklist URL. Forks: change this line only.
 :local mblUrl "https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/lists/blocklist.rsc"
+# Test/dev only: set :global mblUrlBase before /import to use another server.
+:global mblUrlBase
+:if ([:len $mblUrlBase] > 0) do={
+  :set mblUrl ($mblUrlBase . "/blocklist.rsc")
+  :put "MBL: using test URL base $mblUrlBase"
+  :log warning "MBL: using test URL base $mblUrlBase"
+}
 # Minimum RouterOS version (major.minor). 7.21 is the first release with the
 # per-service built-in CA store (/certificate settings builtin-trust-store,
 # 7.21 changelog). Tested on CHR 7.24.5.

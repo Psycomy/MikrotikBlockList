@@ -8,6 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/Psycomy/MikrotikBlockList/actions/workflows/build.yml"><img src="https://github.com/Psycomy/MikrotikBlockList/actions/workflows/build.yml/badge.svg" alt="build"></a>
+  <a href="https://github.com/Psycomy/MikrotikBlockList/actions/workflows/routeros-e2e.yml"><img src="https://github.com/Psycomy/MikrotikBlockList/actions/workflows/routeros-e2e.yml/badge.svg" alt="routeros e2e"></a>
   <a href="https://github.com/Psycomy/MikrotikBlockList/tree/lists"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/lists/badge-entries.json" alt="entries"></a>
   <a href="https://github.com/Psycomy/MikrotikBlockList/tree/lists"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/lists/badge-updated.json" alt="last update"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="license GPL-3.0"></a>
@@ -258,6 +259,7 @@ dropped packets cost almost nothing and never create conntrack entries.
 2. Edit [`sources.toml`](sources.toml) and [`allowlist.txt`](allowlist.txt) as you like.
 3. In [`routeros/install.rsc`](routeros/install.rsc) change the `mblUrl` line at the top to your
    fork's `.../lists/blocklist.rsc`, and use your fork's URL in the install one-liner.
+   To test against another server, set `:global mblUrlBase "https://host:port"` before the `/import`.
 
 Build locally (Python 3.12, no dependencies):
 
@@ -265,6 +267,8 @@ Build locally (Python 3.12, no dependencies):
 python -m unittest discover -v
 python -m mbl build --sources sources.toml --allowlist allowlist.txt --out dist
 ```
+
+The RouterOS installer is also tested end to end on a disposable CHR (`MBL_E2E=1 python -m unittest tests.e2e.test_routeros -v`, needs QEMU/KVM; runs in CI as `routeros-e2e`). See [docs/testing-chr.md](docs/testing-chr.md).
 
 </details>
 
@@ -345,6 +349,8 @@ Para los mantenedores: el workflow rechaza publicar si el total crece más del d
 esperado (p. ej. una fuente nueva), ejecútalo a mano (*Actions → build → Run workflow* en `main`)
 marcando **allow_growth**, que solo omite esa comprobación (en local: `python -m mbl build --allow-growth`).
 
+Para probar contra otro servidor, define `:global mblUrlBase "https://host:port"` antes del `/import` del instalador.
+
 ### Desinstalación
 
 ```routeros
@@ -355,7 +361,7 @@ Borra solo lo que creó el instalador y conserva tus entradas de `mbl-allow` (sa
 tengan el comentario exacto `MBL: admin`). No revierte el
 componente `fetch` de `builtin-trust-store`.
 
-Registro de pruebas: [docs/testing-chr.md](docs/testing-chr.md).
+Registro de pruebas: [docs/testing-chr.md](docs/testing-chr.md). El instalador también se prueba de extremo a extremo en un CHR desechable (workflow `routeros-e2e`).
 
 **Licencia:** [GPL-3.0](LICENSE) cubre **solo el código** (generador, workflow y scripts de
 RouterOS). Los datos de la lista proceden de fuentes de terceros y siguen bajo los términos de
