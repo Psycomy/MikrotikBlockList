@@ -20,6 +20,7 @@
   <a href="#what-gets-created">What gets created</a> ·
   <a href="#see-what-is-blocked">Logs</a> ·
   <a href="#allowlist">Allowlist</a> ·
+  <a href="#updates">Updates</a> ·
   <a href="#uninstall">Uninstall</a> ·
   <a href="#sources-and-licenses">Sources</a> ·
   <a href="#-español">Español</a>
@@ -154,6 +155,17 @@ Something you need is blocked? Add it to `mbl-allow` (an address or a CIDR):
 Entries you add are never removed by updates or reinstalls. The uninstaller removes only
 `mbl-allow` entries whose comment is exactly `MBL: admin` (the ones the installer adds), so do not
 use that comment for your own entries.
+
+## Updates
+
+When the router logs a warning like `MBL: script 3.2.0 available (installed 3.1.0) - reinstall: ...`,
+a newer version of the router script has been published. Run the install command again; it is safe
+to repeat and keeps your allowlist. The router never updates itself, and the notice only appears when
+the published version is newer. The blocklist itself refreshes daily without any action.
+
+Routers installed before 3.1.0 (v2 and 3.0.0) do not have the check, so they never show this
+notice: reinstall once with the install command to get it.
+See the [CHANGELOG](CHANGELOG.md) for what changed.
 
 ## Uninstall
 
@@ -384,6 +396,17 @@ esperado (p. ej. una fuente nueva), ejecútalo a mano (*Actions → build → Ru
 marcando **allow_growth**, que solo omite esa comprobación (en local: `python -m mbl build --allow-growth`).
 
 Para probar contra otro servidor, define `:global mblUrlBase "https://host:port"` antes del `/import` del instalador.
+
+### Actualizaciones
+
+Si el router registra un aviso como `MBL: script 3.2.0 available (installed 3.1.0) - reinstall: ...`,
+hay publicada una versión más nueva del script. Basta con volver a ejecutar el comando de instalación;
+se puede repetir sin riesgo y conserva tu allowlist. El router nunca se actualiza solo y el aviso solo
+sale si la versión publicada es mayor. La lista se renueva cada día sin hacer nada. Los cambios están
+en el [CHANGELOG](CHANGELOG.md).
+
+Los routers instalados antes de la 3.1.0 (v2 y 3.0.0) no incluyen esta comprobación y nunca muestran
+el aviso: reinstala una vez con el comando de instalación para activarla.
 
 ### Desinstalación
 

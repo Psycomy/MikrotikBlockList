@@ -67,6 +67,35 @@ MALICIOUS = [
 ]
 
 
+def _older(version: str) -> str:
+    """A strictly lower MAJOR.MINOR.PATCH than `version` (patch-1, else minor-1, else major-1)."""
+    major, minor, patch = (int(x) for x in version.split("."))
+    if patch:
+        return f"{major}.{minor}.{patch - 1}"
+    if minor:
+        return f"{major}.{minor - 1}.0"
+    assert major, "VERSION 0.0.0 has no lower version"
+    return f"{major - 1}.0.0"
+
+
+_INSTALLED = (REPO / "VERSION").read_text().strip()
+_MAJOR, _MINOR, _PATCH = (int(x) for x in _INSTALLED.split("."))
+
+# Served lists that differ from the good one only in the header's script= value.
+SCRIPT_VARIANTS = {
+    "routeros-full-script-newer.txt": f"{_MAJOR + 1}.0.0",
+    "routeros-full-script-patch.txt": f"{_MAJOR}.{_MINOR}.{_PATCH + 1}",
+    "routeros-full-script-same.txt": _INSTALLED,
+    "routeros-full-script-older.txt": _older(_INSTALLED),
+    # a string comparison would order "10.0.0" before "3.1.0"; numerically it is newer
+    "routeros-full-script-10.txt": "10.0.0",
+    "routeros-full-script-3-10.txt": f"{_MAJOR}.{_MINOR + 9}.0",
+    "routeros-full-script-inject.txt": "3.1.0;/system/reboot",
+    "routeros-full-script-abc.txt": "abc",
+    "routeros-full-script-empty.txt": "",
+}
+
+
 def _synthetic_list(out_dir: Path) -> None:
     """LIST_SIZE consecutive global /32s from 45.0.0.0; no real sources."""
     first = int(IPv4Address("45.0.0.0"))
@@ -126,6 +155,11 @@ class RouterOsTest(unittest.TestCase):
                 [ln + (" " if i < 10 else "") for i, ln in enumerate(body)], footer, "\r\n")
         variant("routeros-full-invalid.txt", header,
                 body + [f"bad-line-{i}" for i in range(LIST_SIZE // 50)], footer)
+        cls.installed_version = (REPO / "VERSION").read_text().strip()
+        assert re.search(r" script=\S*$", header.rstrip("\n")), header
+        for name, published in SCRIPT_VARIANTS.items():
+            variant(name, re.sub(r"script=\S*$", f"script={published}", header.rstrip("\n")),
+                    body, footer)
 
         if ssh:
             key = os.environ.get("MBL_E2E_KEY")
@@ -303,7 +337,7 @@ class RouterOsTest(unittest.TestCase):
         # every line is loaded, including those cut between two /file read chunks
         self.assertEqual(self.count(self.active_list()), LIST_SIZE)
         log = self.log()
-        self.assertIn("MBL: installed", log)
+        self.assertIn(f"MBL: installed (script {self.installed_version})", log)
         warning = f"MBL: using test URL base {self.base}"
         self.assertTrue(any(warning in ln and "warning" in ln.split(" ", 1)[0]
                             for ln in log.splitlines()), log)
@@ -533,6 +567,67 @@ class RouterOsTest(unittest.TestCase):
                 f"/{name}", "MBL: mbl-new.txt rejected (too many invalid lines")
         finally:
             self.restore_path(name)
+
+    def script_notices(self, name: str) -> tuple[str, list[str]]:
+        """Serve `name`, run mbl-update, assert the load worked; return (log, notice lines)."""
+        self.serve_variant(name)
+        try:
+            old = self.active_list()
+            token = self.mark()
+            self.server.requests.clear()
+            self.update()
+            self.assertIn(f"/{name}", self.server.requests)
+            self.assertNotEqual(self.active_list(), old)
+            self.assertEqual(self.count(self.active_list()), LIST_SIZE)
+            log = self.log_after(token)
+            self.assertIn(f"MBL: loaded {LIST_SIZE} entries", log)
+            return log, [ln for ln in log.splitlines() if "MBL: script" in ln]
+        finally:
+            self.restore_path(name)
+
+    def test_14b_newer_script_notice(self):
+        _, notices = self.script_notices("routeros-full-script-newer.txt")
+        self.assertEqual(len(notices), 1, notices)
+        topics, _, msg = notices[0].partition(" ")
+        self.assertIn("warning", topics)
+        self.assertIn(
+            f"MBL: script {_MAJOR + 1}.0.0 available (installed {self.installed_version}) - "
+            'reinstall: /tool fetch url="https://raw.githubusercontent.com/Psycomy/'
+            'MikrotikBlockList/main/routeros/install.rsc" check-certificate=yes; '
+            "/import install.rsc", msg)
+
+    def test_14c_no_notice_when_not_newer(self):
+        for name in ("routeros-full-script-same.txt", "routeros-full-script-older.txt"):
+            with self.subTest(name):
+                _, notices = self.script_notices(name)
+                self.assertEqual(notices, [])
+
+    def test_14d_bad_script_version_ignored(self):
+        self.chr.run(':global mblE2eAlive "yes"')
+        try:
+            for name in ("routeros-full-script-inject.txt", "routeros-full-script-abc.txt",
+                         "routeros-full-script-empty.txt"):
+                with self.subTest(name):
+                    _, notices = self.script_notices(name)
+                    self.assertEqual(notices, [])
+                    # a global variable is lost on reboot: proves `/system reboot` did not run
+                    self.assertEqual(
+                        self.chr.run(":global mblE2eAlive; :put $mblE2eAlive").strip(), "yes")
+        finally:
+            with suppress(ChrError, OSError):
+                self.chr.run('/system script environment remove [find where name="mblE2eAlive"]')
+
+    def test_14e_numeric_comparison(self):
+        # The patch component counts, and the comparison is numeric: 10.0.0 is newer than 3.1.0
+        # although a string comparison would order "10.0.0" before "3.1.0".
+        for name, published in (
+                ("routeros-full-script-patch.txt", f"{_MAJOR}.{_MINOR}.{_PATCH + 1}"),
+                ("routeros-full-script-10.txt", "10.0.0"),
+                ("routeros-full-script-3-10.txt", f"{_MAJOR}.{_MINOR + 9}.0")):
+            with self.subTest(published):
+                _, notices = self.script_notices(name)
+                self.assertEqual(len(notices), 1, notices)
+                self.assertIn(f"MBL: script {published} available", notices[0])
 
     def test_15_final_uninstall(self):
         self.uninstall()
