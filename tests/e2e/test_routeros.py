@@ -53,6 +53,10 @@ MIN_ENTRIES = 1000
 # under 2a0e::/16 that pass the generator's normalize6.
 LIST6_SIZE = 300
 LITE6_SIZE = 60
+# test_14m: valid entries served plus the invalid lines below (IPv4 line, /0,
+# /129, a prefix wider than /19, garbage); 5 of 600 stays under the 1 % budget.
+IPV6_VALIDATION_SIZE = 600
+IPV6_INVALID = ["1.2.3.4", "::/0", "2a0e::/129", "2a0e::/4", "abc"]
 # Lines that must never run on the router: they are only data, counted as invalid.
 # 12 lines, under the 1 % budget (100 with LIST_SIZE entries).
 MALICIOUS = [
@@ -154,6 +158,18 @@ class RouterOsTest(unittest.TestCase):
             assert f"variant={var} family=ipv6 " in lines6[0], lines6[0]
             assert lines6[-1] == f"# MBL-END entries={size}", lines6[-1]
         (served / "routeros-full-truncated.txt").write_text("".join(lines[:-1]))
+        lines6 = (served / "routeros6-full.txt").read_text().splitlines()
+        (served / "routeros6-full-truncated.txt").write_text(
+            "\n".join(lines6[:-1]) + "\n")
+        # 600 valid /48s plus 5 invalid lines: 5 is under the 1 % budget of 600
+        # (with the standard 300 it would be over). Header and footer count 600.
+        head6, foot6 = lines6[0], lines6[-1]
+        big6 = [f"2a0e:{0xd000 + i:x}::/48" for i in range(IPV6_VALIDATION_SIZE)]
+        text6 = "\n".join([head6.replace(f"entries={LIST6_SIZE}", f"entries={IPV6_VALIDATION_SIZE}"),
+                          *big6, *IPV6_INVALID,
+                          foot6.replace(f"entries={LIST6_SIZE}", f"entries={IPV6_VALIDATION_SIZE}")]) + "\n"
+        assert f"entries={IPV6_VALIDATION_SIZE}" in text6.splitlines()[0], head6
+        (served / "routeros6-full-validation.txt").write_text(text6)
         header, body, footer = lines[0], [ln.rstrip("\n") for ln in lines[1:-1]], lines[-1]
         assert len(body) == LIST_SIZE
         nl = "\n"
@@ -706,11 +722,150 @@ class RouterOsTest(unittest.TestCase):
         self.assertEqual(self.count(self.active_list()), LIST_SIZE)
         self.assertIn("routeros-full.txt", self.update_source())
 
+    def install_ipv6(self, ipv6: str, variant: str = "full") -> str:
+        """Install with explicit :global mblIpv6 ('true', 'false' or '' = keep) and mblVariant."""
+        self.chr.upload(ROUTEROS / "install.rsc", "install.rsc")
+        value = ipv6 if ipv6 in ("true", "false") else '""'
+        return self.chr.run(
+            f':global mblUrlBase "{self.base}"; :global mblVariant "{variant}"; '
+            f":global mblIpv6 {value}; /import install.rsc", timeout=600)
+
+    def active_list6(self) -> str:
+        return self.put(
+            '[/ipv6 firewall raw get [find where comment="MBL: in"] src-address-list]')
+
+    def count6(self, list_: str) -> int:
+        return int(self.put(f'[:len [/ipv6 firewall address-list find where list="{list_}"]]'))
+
+    def mbl6_objects(self) -> dict[str, int]:
+        """Every IPv6 MBL object on the router: raw rules, mbl6-* list entries, mbl6-* files."""
+        return {
+            "rules": self.num("/ipv6 firewall raw", 'comment~"^MBL:"'),
+            "entries": self.num("/ipv6 firewall address-list", 'list~"^mbl6-"'),
+            "files": self.num("/file", 'name~"mbl6-"'),
+        }
+
+    def requests6(self) -> list[str]:
+        return [r for r in self.server.requests if r.startswith("/routeros6-")]
+
+    def test_14k_no_ipv6_by_default(self):
+        self.assertEqual(self.mbl6_objects(), {"rules": 0, "entries": 0, "files": 0})
+        self.server.requests.clear()
+        token = self.mark()
+        out = self.install_ipv6("")
+        self.assertIn("/routeros-full.txt", self.server.requests)  # positive control
+        self.assertEqual(self.requests6(), [])
+        self.assertEqual(self.mbl6_objects(), {"rules": 0, "entries": 0, "files": 0})
+        self.assertEqual(self.count6("mbl6-a") + self.count6("mbl6-b"), 0)
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
+        self.assertEqual(self.count(self.active_list()), LIST_SIZE)
+        self.assertIn(f"MBL: installed (script {self.installed_version}, variant full, ipv6 no)",
+                      self.log_after(token))
+        self.assertIn("ipv6 no", out)
+        # an update with IPv6 off never asks for the IPv6 list either
+        self.server.requests.clear()
+        self.update()
+        self.assertTrue(self.server.requests)
+        self.assertEqual(self.requests6(), [])
+        self.assertEqual(self.mbl6_objects(), {"rules": 0, "entries": 0, "files": 0})
+
+    def test_14l_install_ipv6(self):
+        self.server.requests.clear()
+        token = self.mark()
+        out = self.install_ipv6("true")
+        self.assertIn("/routeros-full.txt", self.server.requests)
+        self.assertIn("/routeros6-full.txt", self.server.requests)
+        self.assertEqual(self.num("/ipv6 firewall raw", 'comment~"^MBL:"'), 6)
+        active6 = self.active_list6()
+        self.assertIn(active6, ("mbl6-a", "mbl6-b"))
+        self.assertEqual(self.count6(active6), LIST6_SIZE)
+        log = self.log_after(token)
+        self.assertIn(f"loaded {LIST6_SIZE} ipv6 entries into {active6}", log)
+        self.assertIn(f"MBL: installed (script {self.installed_version}, variant full, ipv6 yes)",
+                      log)
+        self.assertIn("ipv6 yes", out)
+        self.assertEqual(self.count(self.active_list()), LIST_SIZE)
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
+        self.assertIn(':local ipv6 "yes"', self.update_source())
+        # reinstalling with mblIpv6 empty keeps IPv6 on
+        self.server.requests.clear()
+        self.install_ipv6("")
+        self.assertIn("/routeros6-full.txt", self.server.requests)
+        self.assertEqual(self.num("/ipv6 firewall raw", 'comment~"^MBL:"'), 6)
+        self.assertEqual(self.count6(self.active_list6()), LIST6_SIZE)
+        self.assertEqual(self.count(self.active_list()), LIST_SIZE)
+
+    def test_14m_ipv6_line_validation(self):
+        name = "routeros6-full-validation.txt"
+        self.set_update_path("/routeros6-full.txt", f"/{name}")
+        try:
+            old = self.active_list6()
+            token = self.mark()
+            self.server.requests.clear()
+            self.update()
+            self.assertIn(f"/{name}", self.server.requests)
+            new = self.active_list6()
+            self.assertNotEqual(new, old)
+            self.assertEqual(self.count6(new), IPV6_VALIDATION_SIZE)
+            self.assertEqual(self.count6(old), 0)
+            self.assertIn(f"MBL: loaded {IPV6_VALIDATION_SIZE} ipv6 entries into {new}",
+                          self.log_after(token))
+            # none of the invalid lines became an entry
+            self.assertEqual(self.num("/ipv6 firewall address-list",
+                                      f'list="{new}" and address~"^2a0e::"'), 0)
+            self.assertEqual(self.num("/ipv6 firewall address-list",
+                                      f'list="{new}" and address~"^::"'), 0)
+        finally:
+            self.set_update_path(f"/{name}", "/routeros6-full.txt")
+
+    def test_14n_ipv6_failure_never_touches_ipv4(self):
+        for name in ("routeros6-full-404.txt", "routeros6-full-truncated.txt"):
+            with self.subTest(name):
+                self.set_update_path("/routeros6-full.txt", f"/{name}")
+                try:
+                    old4, old6 = self.active_list(), self.active_list6()
+                    n6 = self.count6(old6)
+                    token = self.mark()
+                    self.server.requests.clear()
+                    self.update()
+                    self.assertIn("/routeros-full.txt", self.server.requests)
+                    self.assertIn(f"/{name}", self.server.requests)
+                    self.assertNotEqual(self.active_list(), old4)
+                    self.assertEqual(self.count(self.active_list()), LIST_SIZE)
+                    self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
+                    self.assertEqual(self.active_list6(), old6)
+                    self.assertEqual(self.count6(old6), n6)
+                    log = self.log_after(token)
+                    self.assertIn(f"MBL: loaded {LIST_SIZE} entries", log)
+                    self.assertTrue(any("MBL: ipv6" in ln for ln in log.splitlines()), log)
+                    self.assertFalse(self.running())
+                finally:
+                    self.set_update_path(f"/{name}", "/routeros6-full.txt")
+
+    def test_14o_disable_ipv6_cleans_up(self):
+        self.assertGreater(self.mbl6_objects()["entries"], 0)  # something to clean up
+        self.server.requests.clear()
+        token = self.mark()
+        out = self.install_ipv6("false")
+        self.assertIn("/routeros-full.txt", self.server.requests)
+        self.assertEqual(self.requests6(), [])
+        self.assertEqual(self.mbl6_objects(), {"rules": 0, "entries": 0, "files": 0})
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
+        self.assertEqual(self.count(self.active_list()), LIST_SIZE)
+        self.assertIn(f"MBL: installed (script {self.installed_version}, variant full, ipv6 no)",
+                      self.log_after(token))
+        self.assertIn("ipv6 no", out)
+        self.assertIn("routeros-full.txt", self.update_source())
+
     def test_15_final_uninstall(self):
+        # uninstall removes both families: give IPv6 something to remove first
+        self.install_ipv6("true")
+        self.assertGreater(self.mbl6_objects()["rules"], 0)
         self.uninstall()
         self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 0)
         self.assertEqual(self.num("/system script", 'name~"^mbl-"'), 0)
         self.assertEqual(self.count("mbl-a") + self.count("mbl-b"), 0)
+        self.assertEqual(self.mbl6_objects(), {"rules": 0, "entries": 0, "files": 0})
 
 
 if __name__ == "__main__":
