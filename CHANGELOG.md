@@ -5,6 +5,34 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/). The version in use is in [`VERSION`](VERSION), and the
 published list carries it as `script=<version>` in its header.
 
+## [3.2.0] - 2026-10-21
+
+### Added
+- Two variants of the list: `full` (default, 38,573 entries at release) and `lite` (4,308 entries),
+  built from Spamhaus DROP, DShield, Emerging Threats compromised, ThreatFox and ThreatCluster.
+  Each source in `sources.toml` declares `variants` (default `["full"]`); every `lite` source must
+  also be in `full`.
+- New published files: `routeros-lite.txt` and `blocklist-lite.txt` (headers carry `variant=lite`).
+  `routeros-full.txt`, `blocklist.txt` and the legacy `blocklist.rsc` (full only) are unchanged.
+  `stats.json` gains `variants` (`{"full": {"total": N}, "lite": {"total": M}}`); the top-level
+  `total` stays equal to `full`.
+- Per-variant safety checks: `full` 5,000 to 150,000 entries, `lite` 1,000 to 20,000; in both, no
+  drop over 50% and no growth over 2x (`--allow-growth` applies to both) against that variant's
+  previous total. If either variant fails, nothing is published.
+- Installer: `:global mblVariant "lite"; ` before the one-liner installs `lite`; `"full"` switches
+  back. With the global empty, the installer keeps the installed variant (or uses `full`). Any other
+  value stops with `:error` before changing anything.
+- `mbl-update` downloads `routeros-<variant>.txt`, requires a file of at least 100,000 bytes (`full`)
+  or 20,000 (`lite`), and rejects a header whose `variant=` differs from the installed one (`bad header`).
+- Final message: `MBL: installed (script 3.2.0, variant <v>)`.
+- End-to-end cases `test_14f` to `test_14j` (install lite, reinstall keeps lite, invalid value,
+  variant mismatch, back to full).
+
+### Upgrade from 3.1.0
+Routers on 3.1.0 will log the newer-script notice and can reinstall with the install command. They
+stay on `full` unless `:global mblVariant "lite"; ` is set first. The global persists until reboot,
+so set it explicitly (or to `""`) when reinstalling in the same session.
+
 ## [3.1.0] - 2026-10-21
 
 ### Added

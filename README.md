@@ -45,14 +45,16 @@ flowchart LR
    reserved, CGNAT and other non-global ranges (and anything broader than a /8), subtracts the networks in the
    repository [`allowlist.txt`](allowlist.txt) (GitHub's download range, the big public DNS
    resolvers and Cloudflare's shared CDN ranges) and merges overlapping networks.
-2. Safety checks refuse to publish a broken list: between 5,000 and 150,000 entries, no drop of
+2. Safety checks refuse to publish a broken list: between 5,000 and 150,000 entries (`full`; the
+   `lite` variant: 1,000 to 20,000), no drop of
    more than 50% and no growth of more than 2x from the previous list, and the required source
    (Spamhaus DROP) must succeed. For an expected jump (e.g. a new source), a maintainer can run
    the workflow by hand (*Actions → build → Run workflow* on `main`) with **allow_growth**
    ticked, which skips only the 2x check (locally: `python -m mbl build --allow-growth`).
+   If either variant fails, nothing is published.
 3. The result goes to the orphan [`lists`](https://github.com/Psycomy/MikrotikBlockList/tree/lists)
    branch, overwritten each time with a single commit.
-4. Your router fetches `routeros-full.txt` over HTTPS (`check-certificate=yes`), reads it as plain
+4. Your router fetches `routeros-full.txt` (or `routeros-lite.txt`) over HTTPS (`check-certificate=yes`), reads it as plain
    data, validates every line and adds the addresses to an address list that `/ip firewall raw`
    drops — before connection tracking, so it is cheap. The router never imports or runs anything
    from the file.
@@ -77,9 +79,31 @@ Paste this into the RouterOS terminal (Winbox, WebFig or SSH):
 /tool fetch url="https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/main/routeros/install.rsc" check-certificate=yes; /import install.rsc
 ```
 
-It prints `MBL: installed` when the first list is loaded (about 20 seconds). The installer is
+It prints `MBL: installed (script 3.2.0, variant full)` when the first list is loaded (about 20 seconds). The installer is
 idempotent: run it again at any time to upgrade or repair; nothing is duplicated and your
 allowlist is kept.
+
+### Choose a variant: full or lite
+
+| Variant | Entries (2026-10-21) | Sources | For |
+|---|---|---|---|
+| `full` (default) | 38,573 | all enabled sources | Routers with enough RAM: attackers, scanners and C2 |
+| `lite` | 4,308 | Spamhaus DROP, DShield, Emerging Threats compromised, ThreatFox, ThreatCluster (the `lite` column of [Sources](#sources-and-licenses)) | Little RAM, or you only want C2 and the most serious attack ranges |
+
+To install `lite`, put `:global mblVariant "lite"; ` in front of the one-liner:
+
+```routeros
+:global mblVariant "lite"; /tool fetch url="https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/main/routeros/install.rsc" check-certificate=yes; /import install.rsc
+```
+
+- The choice is kept when you reinstall: with `mblVariant` empty, the installer reuses the variant
+  of the installed `mbl-update`.
+- To go back to `full`: `:global mblVariant "full"; ` plus the same one-liner.
+- The global lives until the router reboots, so if you reinstall in the same session, set it
+  explicitly (`"full"`, `"lite"`, or `""` to keep what is installed).
+- Any value other than `full` or `lite` stops the installer before it changes anything.
+- The final message tells you which one is installed: `MBL: installed (script 3.2.0, variant lite)`.
+- A downloaded list whose header says another variant is rejected (`bad header`).
 
 **Upgrading from v2:** run the same install one-liner again. The old list stays active while the
 first v3 list loads, and the old `mbl-*.rsc` boot copies are removed automatically after the first
@@ -164,7 +188,8 @@ to repeat and keeps your allowlist. The router never updates itself, and the not
 the published version is newer. The blocklist itself refreshes daily without any action.
 
 Routers installed before 3.1.0 (v2 and 3.0.0) do not have the check, so they never show this
-notice: reinstall once with the install command to get it.
+notice: reinstall once with the install command to get it. Routers on 3.1.0 will see the 3.2.0
+notice and can reinstall: they stay on `full` unless you set `lite`.
 See the [CHANGELOG](CHANGELOG.md) for what changed.
 
 ## Uninstall
@@ -182,20 +207,20 @@ added to `builtin-trust-store` is **not** reverted; set it back by hand if you w
 Defined in [`sources.toml`](sources.toml). **C2** = botnet command-and-control servers;
 **attack** = scanners, brute-forcers, spammers and other abusive hosts.
 
-| Source | Category | License / terms (as stated by the source) |
-|---|---|---|
-| [Spamhaus DROP](https://www.spamhaus.org/drop/) *(required)* | attack | Free under the Spamhaus DROP terms; **no explicit redistribution grant** — home use |
-| [Emerging Threats compromised IPs](https://rules.emergingthreats.net/blockrules/) | attack | Emerging Threats open rules, BSD-style terms |
-| [CINS Army](https://cinsscore.com/) | attack | Usable "in any way you see fit"; no formal license |
-| [blocklist.de](https://www.blocklist.de/) | attack | **Unknown** — check the source terms |
-| [DShield](https://www.dshield.org/) | attack | CC BY-NC-SA (non-commercial only, attribution) |
-| [IPsum level 3](https://github.com/stamparm/ipsum) | attack | The Unlicense (public domain) |
-| [Binary Defense banlist](https://www.binarydefense.com/) | attack | Public use only, no commercial use (file header) |
-| [Turris Sentinel greylist](https://view.sentinel.turris.cz/greylist-data/) (CZ.NIC, honeypots on Turris routers) | attack | CC BY-NC-SA 4.0 (non-commercial only, attribution) |
-| [abuse.ch ThreatFox](https://threatfox.abuse.ch/) | c2 | abuse.ch fair use, free; commercial use may need the paid API |
-| [ThreatCluster](https://threatcluster.io/iocs) | c2 | **No license stated** — check the source terms |
-| [Data-Shield IPv4](https://github.com/duggytuxy/Data-Shield_IPv4_Blocklist) *(optional, disabled)* | attack | Repository GPLv3 |
-| [AbuseIPDB s100 (borestad)](https://github.com/borestad/blocklist-abuseipdb) *(optional, disabled)* | attack | No license stated; AbuseIPDB data used with permission |
+| Source | Category | lite | License / terms (as stated by the source) |
+|---|---|:---:|---|
+| [Spamhaus DROP](https://www.spamhaus.org/drop/) *(required)* | attack | yes | Free under the Spamhaus DROP terms; **no explicit redistribution grant** — home use |
+| [Emerging Threats compromised IPs](https://rules.emergingthreats.net/blockrules/) | attack | yes | Emerging Threats open rules, BSD-style terms |
+| [CINS Army](https://cinsscore.com/) | attack |  | Usable "in any way you see fit"; no formal license |
+| [blocklist.de](https://www.blocklist.de/) | attack |  | **Unknown** — check the source terms |
+| [DShield](https://www.dshield.org/) | attack | yes | CC BY-NC-SA (non-commercial only, attribution) |
+| [IPsum level 3](https://github.com/stamparm/ipsum) | attack |  | The Unlicense (public domain) |
+| [Binary Defense banlist](https://www.binarydefense.com/) | attack |  | Public use only, no commercial use (file header) |
+| [Turris Sentinel greylist](https://view.sentinel.turris.cz/greylist-data/) (CZ.NIC, honeypots on Turris routers) | attack |  | CC BY-NC-SA 4.0 (non-commercial only, attribution) |
+| [abuse.ch ThreatFox](https://threatfox.abuse.ch/) | c2 | yes | abuse.ch fair use, free; commercial use may need the paid API |
+| [ThreatCluster](https://threatcluster.io/iocs) | c2 | yes | **No license stated** — check the source terms |
+| [Data-Shield IPv4](https://github.com/duggytuxy/Data-Shield_IPv4_Blocklist) *(optional, disabled)* | attack |  | Repository GPLv3 |
+| [AbuseIPDB s100 (borestad)](https://github.com/borestad/blocklist-abuseipdb) *(optional, disabled)* | attack |  | No license stated; AbuseIPDB data used with permission |
 
 The selection comes from a comparison of 44 free feeds (size, overlap, unique contribution,
 false positives against CDN ranges and the top 5,000 sites, freshness and license): see
@@ -215,26 +240,28 @@ The [`lists`](https://github.com/Psycomy/MikrotikBlockList/tree/lists) branch co
 
 | File | Content |
 |---|---|
-| `routeros-full.txt` | List in the router format (header line, one address per line, footer line); this is what v3 routers download |
+| `routeros-full.txt` | List in the router format (header line, one address per line, footer line); this is what v3 routers on `full` download |
+| `routeros-lite.txt` | Same format, `lite` variant (5 sources, about 4,300 entries); what v3 routers on `lite` download |
 | `blocklist.rsc` | **Legacy**, only for routers still on v2; published unchanged and kept at least until 2027-04-30. v3 routers do not use it |
-| `blocklist.txt` | Plain list, one IPv4 address or CIDR per line, no header — **handy for other firewalls** (pfSense, OPNsense, iptables/ipset, nftables…) |
-| `stats.json` | Generation time, total, and per-source entries and errors |
+| `blocklist.txt` | Plain list (`full`), one IPv4 address or CIDR per line, no header — **handy for other firewalls** (pfSense, OPNsense, iptables/ipset, nftables…) |
+| `blocklist-lite.txt` | The same plain list for the `lite` variant |
+| `stats.json` | Generation time, total (`full`), `variants` (total of `full` and `lite`), and per-source entries and errors |
 | [`NOTICE.md`](https://github.com/Psycomy/MikrotikBlockList/blob/lists/NOTICE.md) | Attribution: every source used in that build, its URL, terms and entry count |
 | `badge-entries.json`, `badge-updated.json` | shields.io endpoints for the badges above |
 
 <details>
 <summary><b>How an update works on the router</b></summary>
 
-1. `mbl-update` downloads `routeros-full.txt` over HTTPS with `check-certificate=yes`. A failed
+1. `mbl-update` downloads `routeros-<variant>.txt` (`full` or `lite`, as installed) over HTTPS with `check-certificate=yes`. A failed
    download changes nothing.
-2. It checks the size (at least 100,000 bytes) and reads the file with `/file read` in 32 KiB
-   chunks. The first line must be the header (`# MikrotikBlockList v3 format=1 variant=full
+2. It checks the size (at least 100,000 bytes for `full`, 20,000 for `lite`) and reads the file with `/file read` in 32 KiB
+   chunks. The first line must be the header (`# MikrotikBlockList v3 format=1 variant=<variant>
    family=ipv4 ... entries=N script=<version>`), so an HTML error page is never accepted.
 3. Every other line is only a value: it must be an IPv4 address or a CIDR with a prefix from 8 to
    32, and only then is it added to the list the rules are **not** using (`mbl-a` or `mbl-b`).
    Nothing from the file is imported, parsed or executed; a line such as `/system reboot` is just an
    invalid line.
-4. The load is rejected, and the active list kept, if the header is missing or wrong, the footer
+4. The load is rejected, and the active list kept, if the header is missing or wrong (including a `variant=` other than the installed one), the footer
    (`# MBL-END entries=N`) is missing, the header and footer counts differ, the added count differs
    from `entries`, more than 1 % of the lines are invalid, or fewer than 1,000 entries were added.
    The log line `MBL: <file> rejected (<reason>), active list kept` names the reason: `no header`,
@@ -287,7 +314,7 @@ dropped packets cost almost nothing and never create conntrack entries.
    `lists` branch automatically (enable Actions in your fork; it runs daily and on pushes to `main`).
 2. Edit [`sources.toml`](sources.toml) and [`allowlist.txt`](allowlist.txt) as you like.
 3. In [`routeros/install.rsc`](routeros/install.rsc) change the `mblBase` line at the top to your
-   fork's `.../lists` URL (the script appends `/routeros-full.txt`), and use your fork's URL in the install one-liner.
+   fork's `.../lists` URL (the script appends `/routeros-<variant>.txt`), and use your fork's URL in the install one-liner.
    To test against another server, set `:global mblUrlBase "https://host:port"` before the `/import`.
 
 Build locally (Python 3.12, no dependencies):
@@ -341,7 +368,7 @@ la allowlist `mbl-allow` (con las IPs de administración actuales como `MBL: adm
 `mbl-last.txt` al arrancar). Además activa el componente `fetch` en el almacén de certificados
 integrado (`builtin-trust-store`). Se puede volver a ejecutar sin duplicar nada.
 
-**Cómo funciona en el router:** descarga `routeros-full.txt`, lo lee con `/file read` en trozos
+**Cómo funciona en el router:** descarga `routeros-<variante>.txt`, lo lee con `/file read` en trozos
 de 32 KiB y valida cada línea (IPv4 o CIDR con prefijo de 8 a 32); solo añade direcciones. Nunca
 importa ni ejecuta el contenido del fichero. Si falta la cabecera o el pie, no coinciden los
 conteos, hay más de un 1 % de líneas inválidas o quedan menos de 1000 entradas, se rechaza la
@@ -350,9 +377,32 @@ active list kept`: `no header`, `bad header`, `no footer`, `header/footer mismat
 `count mismatch`, `too many invalid lines (N)`, `too few entries (N)` o `read error`. Medido en un CHR 7.24.5 (1 vCPU, 256 MiB): 40.000 entradas
 en unos 25 s.
 
-**Ficheros publicados:** `routeros-full.txt` (formato del router, con cabecera y pie),
-`blocklist.rsc` (**legado** para routers con v2, se mantiene al menos hasta 2027-04-30) y
-`blocklist.txt` (una entrada por línea, sin cabecera, para otros firewalls).
+**Elegir variante (*full* o *lite*):** `full` es la de por defecto (38.573 entradas el 2026-10-21).
+`lite` (4.308 entradas) usa solo Spamhaus DROP, DShield, Emerging Threats compromised, ThreatFox y
+ThreatCluster (columna `lite` de la [tabla de fuentes](#sources-and-licenses)); es para routers con
+poca RAM o si solo quieres bloquear C2 y los rangos de ataque más graves. Para instalar `lite`, pon
+`:global mblVariant "lite"; ` delante del comando de instalación:
+
+```routeros
+:global mblVariant "lite"; /tool fetch url="https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/main/routeros/install.rsc" check-certificate=yes; /import install.rsc
+```
+
+- La elección se conserva al reinstalar: con `mblVariant` vacía, el instalador usa la variante del
+  `mbl-update` instalado.
+- Para volver a `full`: `:global mblVariant "full"; ` y el mismo comando.
+- La global dura hasta que el router se reinicia; si reinstalas en la misma sesión, defínela de forma
+  explícita (`"full"`, `"lite"` o `""` para conservar lo instalado).
+- Cualquier valor distinto de `full` o `lite` detiene el instalador antes de cambiar nada.
+- El mensaje final indica la variante: `MBL: installed (script 3.2.0, variant lite)`.
+- Una lista descargada con otra `variant=` en la cabecera se rechaza (`bad header`).
+- Límites de publicación: `full` 5.000 a 150.000 entradas, `lite` 1.000 a 20.000; si falla cualquiera
+  de las dos, no se publica nada. Tamaño mínimo del fichero en el router: 100.000 bytes (`full`) y
+  20.000 (`lite`).
+
+**Ficheros publicados:** `routeros-full.txt` y `routeros-lite.txt` (formato del router, con cabecera
+y pie), `blocklist.rsc` (**legado** para routers con v2, solo `full`, se mantiene al menos hasta
+2027-04-30), y `blocklist.txt` y `blocklist-lite.txt` (una entrada por línea, sin cabecera, para otros
+firewalls). `stats.json` añade `variants` con el total de cada variante.
 
 **Actualizar desde la v2:** vuelve a ejecutar el mismo comando de instalación. La lista antigua
 sigue activa mientras carga la primera lista v3, y los `mbl-*.rsc` antiguos se borran solos tras la
@@ -406,7 +456,8 @@ sale si la versión publicada es mayor. La lista se renueva cada día sin hacer 
 en el [CHANGELOG](CHANGELOG.md).
 
 Los routers instalados antes de la 3.1.0 (v2 y 3.0.0) no incluyen esta comprobación y nunca muestran
-el aviso: reinstala una vez con el comando de instalación para activarla.
+el aviso: reinstala una vez con el comando de instalación para activarla. Los routers con la 3.1.0
+verán el aviso de la 3.2.0 y pueden reinstalar: se quedan en `full` salvo que definas `lite`.
 
 ### Desinstalación
 

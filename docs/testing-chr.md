@@ -245,6 +245,11 @@ Los casos comparten un router y corren en orden.
 | `test_14c_no_notice_when_not_newer` | Versión publicada igual o menor que la instalada: sin aviso |
 | `test_14d_bad_script_version_ignored` | Versión publicada con basura (`3.1.0;/system reboot`, `abc`, vacía): sin aviso, la carga termina bien y nada se ejecuta |
 | `test_14e_numeric_comparison` | Comparación numérica y componente patch: publicadas `patch+1`, `10.0.0` (una comparación de cadenas la ordenaría por debajo de `3.1.0`) y `3.10.0` frente a `3.1.0` instalada avisan cada una con exactamente 1 línea |
+| `test_14f_install_lite` | `:global mblVariant "lite"` antes del instalador: descarga `/routeros-lite.txt`, la lista activa tiene 2000 entradas, el mensaje final es `MBL: installed (script <v>, variant lite)` y `mbl-update` apunta a `routeros-lite.txt` |
+| `test_14g_reinstall_keeps_lite` | Reinstalar con `mblVariant ""` conserva `lite`: pide `routeros-lite.txt`, nunca `routeros-full.txt`, y la lista sigue en 2000 entradas |
+| `test_14h_invalid_variant_rejected` | `mblVariant "mini"`: el instalador falla con `invalid mblVariant` antes de cambiar nada (6 reglas `MBL:`, misma lista activa y mismas entradas, ninguna petición al servidor, `mbl-update` sigue con `lite`) |
+| `test_14i_variant_mismatch_rejected` | El router en `lite` recibe una cabecera `variant=full`: rechazado con `bad header` y la lista activa no cambia |
+| `test_14j_back_to_full` | `mblVariant "full"` vuelve a `full`: descarga `/routeros-full.txt`, `LIST_SIZE` entradas y `mbl-update` apunta a `routeros-full.txt` |
 | `test_15_final_uninstall` | Siempre el último: deja el router limpio |
 
 ### Rendimiento de la v3 (2026-10-21)
