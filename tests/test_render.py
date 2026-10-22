@@ -1,5 +1,4 @@
 import json
-import re
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -10,7 +9,6 @@ from mbl.fetch import SourceResult
 from mbl.render import ipv6_files, router_txt, write_outputs
 from mbl.sources import Source
 
-ADD_RE = re.compile(r"^add list=\$mblTarget timeout=7d address=\d+\.\d+\.\d+\.\d+(/\d+)?$")
 WHEN = datetime(2026, 10, 19, 4, 17, 0, tzinfo=timezone.utc)
 
 
@@ -51,12 +49,10 @@ class RenderTest(unittest.TestCase):
             names = {p.name for p in out.iterdir()}
             head = (out / "routeros-lite.txt").read_text().splitlines()[0]
             lite_txt = (out / "blocklist-lite.txt").read_text()
-            rsc = (out / "blocklist.rsc").read_text()
         self.assertTrue({"routeros-full.txt", "routeros-lite.txt", "blocklist.txt",
                          "blocklist-lite.txt"} <= names)
         self.assertIn("variant=lite", head)
         self.assertEqual(lite_txt, "8.8.8.8\n")
-        self.assertEqual(rsc.count("add list="), 2)
 
     def test_stats_variants(self):
         full = [IPv4Network("1.10.16.0/20"), IPv4Network("8.8.8.8/32")]
@@ -140,45 +136,6 @@ class RenderTest(unittest.TestCase):
             out = self._write(nets, tmp)
             first = (out / "blocklist.txt").read_text().splitlines()[0]
         self.assertFalse(first.startswith("#"))
-
-    def test_rsc_structure(self):
-        nets = [IPv4Network("1.10.16.0/20"), IPv4Network("8.8.8.8/32")]
-        with tempfile.TemporaryDirectory() as tmp:
-            out = self._write(nets, tmp)
-            text = (out / "blocklist.rsc").read_text()
-            txt = (out / "blocklist.txt").read_text()
-        self.assertTrue(text.endswith("# MBL-END\n"))
-        lines = text.splitlines()
-        self.assertTrue(lines[0].startswith("# MikroBlockList v2"))
-        self.assertEqual(lines[-2:], [":global mblImportOk true", "# MBL-END"])
-        self.assertIn("# generated: 2026-10-19T04:17:00Z entries: 2", lines)
-        start = lines.index("/ip firewall address-list")
-        body = lines[start + 1 : -2]
-        self.assertEqual(len(body), 2)
-        for line in body:
-            self.assertRegex(line, ADD_RE)
-        self.assertIn("address=8.8.8.8", body[1])
-        self.assertNotIn("/32", text)
-        self.assertEqual(txt, "1.10.16.0/20\n8.8.8.8\n")
-
-    def test_rsc_contains_only_expected_commands(self):
-        nets = [IPv4Network("1.10.16.0/20")]
-        with tempfile.TemporaryDirectory() as tmp:
-            text = (self._write(nets, tmp) / "blocklist.rsc").read_text()
-        others = [l for l in text.splitlines() if not l.startswith("add ")]
-        self.assertEqual(
-            others,
-            [
-                "# MikroBlockList v2 - https://github.com/Psycomy/MikroBlockList",
-                "# For home / non-commercial use only (see source licenses in README)",
-                "# generated: 2026-10-19T04:17:00Z entries: 1",
-                "# Sources and terms: https://github.com/Psycomy/MikroBlockList/blob/lists/NOTICE.md",
-                ":global mblTarget",
-                "/ip firewall address-list",
-                ":global mblImportOk true",
-                "# MBL-END",
-            ],
-        )
 
     def test_stats_and_badges(self):
         nets = [IPv4Network(f"10.{i // 256}.{i % 256}.0/24") for i in range(61234)]

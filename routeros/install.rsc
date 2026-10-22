@@ -161,8 +161,7 @@
 # The raw rules are not removed here either: each "MBL: x" rule is renamed
 # "MBL-OLD: MBL: x" and keeps dropping until step 7 has added the new rules,
 # then every ^MBL-OLD: rule goes (also those left by an aborted install).
-# Files are kept too: v2 boot copies (mbl-*.rsc) are removed by mbl-update
-# only after its first successful load.
+# Files are kept too: the boot copy mbl-last.txt is replaced by the next load.
 # prevList: the list the in rule points to; after an aborted install only its
 # renamed copy "MBL-OLD: MBL: in" may be left.
 :local prevList ""
@@ -717,20 +716,8 @@
         :if ($v6) do={ :set mblLastOk6 true } else={ :set mblLastOk true }
         :log info ("MBL: loaded $n " . $fl . "entries into $target (list generated $gen)")
 
-        # The notices below are IPv4 only: v2 never had IPv6 files, and the
-        # IPv6 list comes from the same build as the IPv4 one.
+        # The notices below are IPv4 only: the IPv6 list comes from the same build.
         :if (!$v6) do={
-          # ---- v2 leftovers: its boot copies are only removed now that a v3
-          # load has succeeded, so an upgrade never loses the last good copy.
-          # Errors are ignored: they must never turn a good load into "update aborted".
-          :do {
-            :local v2 [/file find where name~"^(flash/)?mbl-.*\\.rsc\$"]
-            :if ([:len $v2] > 0) do={
-              /file remove $v2
-              :log info "MBL: removed v2 files"
-            }
-          } on-error={}
-
           # ---- stale list: the list is loaded either way; this only warns, e.g.
           # when the GitHub Action has stopped. Errors here are ignored so they can
           # never fail an update that already succeeded.

@@ -8,26 +8,11 @@ from mbl.fetch import SourceResult
 
 TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 PROJECT_URL = "https://github.com/Psycomy/MikroBlockList"
-NOTICE_URL = PROJECT_URL + "/blob/lists/NOTICE.md"
 
 
 def _cidr(net: IPv4Network | IPv6Network) -> str:
     host = 32 if net.version == 4 else 128
     return str(net.network_address) if net.prefixlen == host else str(net)
-
-
-def _rsc(addresses: list[str], stamp: str) -> str:
-    lines = [
-        "# MikroBlockList v2 - https://github.com/Psycomy/MikroBlockList",
-        "# For home / non-commercial use only (see source licenses in README)",
-        f"# generated: {stamp} entries: {len(addresses)}",
-        f"# Sources and terms: {NOTICE_URL}",
-        ":global mblTarget",
-        "/ip firewall address-list",
-    ]
-    lines += [f"add list=$mblTarget timeout=7d address={a}" for a in addresses]
-    lines += [":global mblImportOk true", "# MBL-END"]
-    return "\n".join(lines) + "\n"
 
 
 def router_txt(addresses: list[str], stamp: str, script_version: str,
@@ -159,7 +144,6 @@ def write_outputs(
     }
 
     files = {
-        "blocklist.rsc": _rsc(addresses["full"], stamp),
         "stats.json": _json(stats),
         "badge-entries.json": _json(badge_entries),
         "badge-updated.json": _json(badge_updated),

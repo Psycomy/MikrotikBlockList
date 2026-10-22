@@ -151,10 +151,6 @@ must load: the count added must equal the header's `entries` exactly. The 1 % in
 only tolerates stray lines (comments, blanks, junk) around the entries; on a small `lite` list it
 rounds down to no invalid line at all (the generator output is clean).
 
-**Upgrading from v2:** run the same install one-liner again. The old list stays active while the
-first v3 list loads, and the old `mbl-*.rsc` boot copies are removed automatically after the first
-successful v3 load (log: `MBL: removed v2 files`).
-
 > [!TIP]
 > **Certificate error on the one-liner?** On RouterOS 7.21–7.23, or with a customised trust
 > store, the built-in CA store may not cover `fetch` yet, so the very first download (before the
@@ -237,10 +233,6 @@ a newer version of the router script has been published. Run the install command
 to repeat and keeps your allowlist. The router never updates itself, and the notice only appears when
 the published version is newer. The blocklist itself refreshes daily without any action.
 
-Routers installed before 3.1.0 (v2 and 3.0.0) do not have the check, so they never show this
-notice: reinstall once with the install command to get it. Routers on 3.2.0 will see the 3.3.0
-notice and can reinstall: they keep their variant and stay IPv4-only unless you enable IPv6
-(see [Optional IPv6](#optional-ipv6)).
 See the [CHANGELOG](CHANGELOG.md) for what changed.
 
 ## Automatic CDN allowlist
@@ -329,7 +321,6 @@ The [`lists`](https://github.com/Psycomy/MikroBlockList/tree/lists) branch conta
 |---|---|
 | `routeros-full.txt` | List in the router format (header line, one address per line, footer line); this is what v3 routers on `full` download |
 | `routeros-lite.txt` | Same format, `lite` variant (5 sources, about 4,300 entries); what v3 routers on `lite` download |
-| `blocklist.rsc` | **Legacy** and `full` only (there is no `lite` version); only for routers still on v2; published unchanged and kept at least until 2027-04-30. v3 routers do not use it |
 | `blocklist.txt` | Plain list (`full`), one IPv4 address or CIDR per line, no header — **handy for other firewalls** (pfSense, OPNsense, iptables/ipset, nftables…) |
 | `blocklist-lite.txt` | The same plain list for the `lite` variant |
 | `routeros6-full.txt`, `routeros6-lite.txt` | IPv6 lists in the router format (`family=ipv6` in the header); only IPv6 routers download them. Not published on a day when IPv6 fails its checks |
@@ -516,8 +507,7 @@ poca RAM o si solo quieres bloquear C2 y los rangos de ataque más graves. Para 
   ejecución se acepta con un aviso (solo se omite la comprobación de caída).
 
 **Ficheros publicados:** `routeros-full.txt` y `routeros-lite.txt` (formato del router, con cabecera
-y pie), `blocklist.rsc` (**legado** para routers con v2, solo `full`, se mantiene al menos hasta
-2027-04-30), y `blocklist.txt` y `blocklist-lite.txt` (una entrada por línea, sin cabecera, para otros
+y pie), y `blocklist.txt` y `blocklist-lite.txt` (una entrada por línea, sin cabecera, para otros
 firewalls). `stats.json` añade `variants` con el total de cada variante y `cdn_allowlist`.
 
 ### IPv6 opcional
@@ -561,10 +551,6 @@ Viene **desactivado**. Para bloquear también atacantes IPv6, pon
 - Ficheros: `routeros6-full.txt` y `routeros6-lite.txt` (formato del router, `family=ipv6`), y
   `blocklist6.txt` y `blocklist6-lite.txt` (una entrada por línea, para otros firewalls). `stats.json`
   añade `ipv6` y `entries6` por fuente; `entries` pasa a contar solo IPv4.
-
-**Actualizar desde la v2:** vuelve a ejecutar el mismo comando de instalación. La lista antigua
-sigue activa mientras carga la primera lista v3, y los `mbl-*.rsc` antiguos se borran solos tras la
-primera carga v3 correcta (log `MBL: removed v2 files`).
 
 > [!TIP]
 > **¿Error de certificado en el comando?** En RouterOS 7.21–7.23, o con un almacén de confianza
@@ -644,11 +630,6 @@ hay publicada una versión más nueva del script. Basta con volver a ejecutar el
 se puede repetir sin riesgo y conserva tu allowlist. El router nunca se actualiza solo y el aviso solo
 sale si la versión publicada es mayor. La lista se renueva cada día sin hacer nada. Los cambios están
 en el [CHANGELOG](CHANGELOG.md).
-
-Los routers instalados antes de la 3.1.0 (v2 y 3.0.0) no incluyen esta comprobación y nunca muestran
-el aviso: reinstala una vez con el comando de instalación para activarla. Los routers con la 3.2.0
-verán el aviso de la 3.3.0 y pueden reinstalar: conservan su variante y siguen solo con IPv4 salvo que
-actives IPv6 (ver [IPv6 opcional](#ipv6-opcional)).
 
 ### Desinstalación
 

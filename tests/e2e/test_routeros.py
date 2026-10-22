@@ -766,36 +766,6 @@ class RouterOsTest(unittest.TestCase):
             finally:
                 self.chr.run(dns)
 
-    def test_10_upgrade_from_v2(self):
-        v2 = subprocess.run(["git", "show", "v2.0.0:routeros/install.rsc"], cwd=REPO,
-                            capture_output=True, check=True).stdout
-        self.uninstall()
-        with tempfile.TemporaryDirectory(prefix="mbl-v2-") as d:
-            f = Path(d) / "install.rsc"
-            f.write_bytes(v2)
-            self.chr.upload(f, "install.rsc")
-        self.chr.run(f':global mblUrlBase "{self.base}"; /import install.rsc', timeout=600)
-        self.assertEqual(self.num("/file", 'name="mbl-last.rsc"'), 1, self.chr.run("/file print"))
-        before = self.count(self.active_list())
-        self.assertGreaterEqual(before, MIN_ENTRIES)
-        v2_list = self.active_list()
-        rsc = 'name~"^mbl-.*\\\\.rsc"'
-        self.assertEqual(self.num("/file", rsc), 1, self.chr.run("/file print"))  # pattern control
-        token = self.mark()
-        # every sample sees the rule on a populated list, with no gap at all
-        self.assert_always_protected(self.install_sampled())
-        log = self.log_after(token)
-        # the v3 load itself happened, whatever the final count says
-        self.assertIn(f"MBL: loaded {LIST_SIZE} entries", log)
-        self.assertIn("MBL: removed v2 files", log)
-        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
-        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL-OLD:"'), 0)
-        self.assertEqual(self.num("/file", rsc), 0, self.chr.run("/file print"))
-        self.assertEqual(self.num("/file", 'name="mbl-last.txt"'), 1, self.chr.run("/file print"))
-        # the v3 load went to the other list (it does not clear the v2 one first)
-        self.assertNotEqual(self.active_list(), v2_list)
-        self.assertEqual(self.count(self.active_list()), LIST_SIZE)
-
     def test_11_injected_lines_never_run(self):
         name = "routeros-full-injected.txt"
         self.serve_variant(name)

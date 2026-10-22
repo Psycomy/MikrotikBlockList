@@ -8,10 +8,13 @@ published list carries it as `script=<version>` in its header.
 ## [3.4.1] - 2026-10-22
 
 ### Changed
-- Lists use only the new name in their first line: `# MikroBlockList v3 ...` (and
-  `# MikroBlockList v2` in the legacy `blocklist.rsc`). The installer no longer accepts the
+- Lists use only the new name in their first line: `# MikroBlockList v3 ...`. The installer no longer accepts the
   pre-rename `# MikrotikBlockList ` header. Routers on script 3.3.2 or older (and v2) stop
   loading the list and must reinstall; 3.4.0 accepts both headers.
+
+### Removed
+- v2 support: the legacy `blocklist.rsc` is no longer published, and the installer no longer
+  cleans up v2 boot copies (`mbl-*.rsc`). The uninstaller still removes them.
 
 ## [3.4.0] - 2026-10-22
 

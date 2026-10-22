@@ -24,7 +24,7 @@ category = "attack"
 required = true
 variants = ["lite", "full"]
 """
-FILES = {"blocklist.rsc", "blocklist.txt", "stats.json",
+FILES = {"blocklist.txt", "stats.json",
          "badge-entries.json", "badge-updated.json", "NOTICE.md", "routeros-full.txt",
          "routeros-lite.txt", "blocklist-lite.txt"}
 
@@ -107,7 +107,7 @@ class BuildTest(BuildBase):
 
     def test_build_refuses_on_required_failure(self):
         self.assertEqual(self._build(_fetcher(error="boom")), 1)
-        self.assertFalse((self.out / "blocklist.rsc").exists())
+        self.assertFalse((self.out / "blocklist.txt").exists())
 
     def test_build_skips_drop_check_without_previous(self):
         self.assertEqual(self._build(_fetcher(), previous=None), 0)
