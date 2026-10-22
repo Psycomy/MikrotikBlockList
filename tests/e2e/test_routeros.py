@@ -766,6 +766,12 @@ class RouterOsTest(unittest.TestCase):
             finally:
                 self.chr.run(dns)
 
+    def test_10_reinstall_after_uninstall(self):
+        # test_09 leaves the router uninstalled; the cases below need it installed.
+        out = self.install(self.base)
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6, out)
+        self.assertEqual(self.count(self.active_list()), LIST_SIZE)
+
     def test_11_injected_lines_never_run(self):
         name = "routeros-full-injected.txt"
         self.serve_variant(name)
