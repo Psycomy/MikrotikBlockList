@@ -1,9 +1,11 @@
 """Unit tests for the CHR harness. Fast, no VM, run in the normal discover."""
+import functools
 import hashlib
 import io
 import os
 import shutil
 import socket
+import socketserver
 import ssl
 import subprocess
 import sys
@@ -35,6 +37,28 @@ class FreePortTest(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("openssl"), "openssl not available")
 class TlsServerTest(unittest.TestCase):
+    # Generating the CA and server key pair (RSA) takes ~1 s; do it once and copy the
+    # files into each server's directory instead of re-running openssl per test.
+    @classmethod
+    def setUpClass(cls):
+        cls._template = TlsServer(Path(tempfile.gettempdir()))
+        cls.addClassCleanup(cls._template._tmp.cleanup)
+
+    def setUp(self):
+        template = self._template._dir
+
+        def copy_certs(server):
+            for f in template.iterdir():
+                shutil.copy(f, server._dir / f.name)
+
+        # serve_forever polls for shutdown every 0.5 s by default, which is what
+        # stop() waits for; poll fast in tests.
+        fast = functools.partialmethod(socketserver.BaseServer.serve_forever, poll_interval=0.01)
+        for patcher in (mock.patch.object(TlsServer, "_make_certs", copy_certs),
+                        mock.patch.object(harness._TlsHttpServer, "serve_forever", fast)):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
     def test_tls_server_serves_with_ca(self):
         with tempfile.TemporaryDirectory() as root:
             Path(root, "x.txt").write_text("hello")
