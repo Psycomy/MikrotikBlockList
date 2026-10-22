@@ -8,7 +8,6 @@ from mbl.fetch import SourceResult
 
 TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 PROJECT_URL = "https://github.com/Psycomy/MikroBlockList"
-NOTICE_URL = PROJECT_URL + "/blob/lists/NOTICE.md"
 
 
 def _cidr(net: IPv4Network | IPv6Network) -> str:
@@ -16,28 +15,10 @@ def _cidr(net: IPv4Network | IPv6Network) -> str:
     return str(net.network_address) if net.prefixlen == host else str(net)
 
 
-def _rsc(addresses: list[str], stamp: str) -> str:
-    # v2 routers abort unless the first line starts with "# MikrotikBlockList";
-    # this legacy file keeps the pre-rename name until it is retired (2027-04-30).
-    lines = [
-        "# MikrotikBlockList v2 - https://github.com/Psycomy/MikroBlockList",
-        "# For home / non-commercial use only (see source licenses in README)",
-        f"# generated: {stamp} entries: {len(addresses)}",
-        f"# Sources and terms: {NOTICE_URL}",
-        ":global mblTarget",
-        "/ip firewall address-list",
-    ]
-    lines += [f"add list=$mblTarget timeout=7d address={a}" for a in addresses]
-    lines += [":global mblImportOk true", "# MBL-END"]
-    return "\n".join(lines) + "\n"
-
-
 def router_txt(addresses: list[str], stamp: str, script_version: str,
                variant: str = "full", family: str = "ipv4") -> str:
     n = len(addresses)
-    # The header keeps the pre-rename project name: routers on script <= 3.3.2 only
-    # accept "# MikrotikBlockList ". Switch to "# MikroBlockList " after 2027-04-30.
-    lines = [f"# MikrotikBlockList v3 format=1 variant={variant} family={family} "
+    lines = [f"# MikroBlockList v3 format=1 variant={variant} family={family} "
              f"generated={stamp} entries={n} script={script_version}"]
     lines += addresses
     lines.append(f"# MBL-END entries={n}")
@@ -163,7 +144,6 @@ def write_outputs(
     }
 
     files = {
-        "blocklist.rsc": _rsc(addresses["full"], stamp),
         "stats.json": _json(stats),
         "badge-entries.json": _json(badge_entries),
         "badge-updated.json": _json(badge_updated),

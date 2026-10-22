@@ -187,9 +187,9 @@ class RouterOsTest(unittest.TestCase):
                 footer.replace(f"entries={LIST_SIZE}", f"entries={wrong}"))
         variant("routeros-full-crlf.txt", header,
                 [ln + (" " if i < 10 else "") for i, ln in enumerate(body)], footer, "\r\n")
-        assert header.startswith("# MikrotikBlockList v3 "), header
-        variant("routeros-full-newname.txt",
-                header.replace("# MikrotikBlockList v3 ", "# MikroBlockList v3 ", 1), body, footer)
+        assert header.startswith("# MikroBlockList v3 "), header
+        variant("routeros-full-oldname.txt",
+                header.replace("# MikroBlockList v3 ", "# MikrotikBlockList v3 ", 1), body, footer)
         variant("routeros-full-invalid.txt", header,
                 body + [f"bad-line-{i}" for i in range(LIST_SIZE // 50)], footer)
         lite_text = (served / "routeros-lite.txt").read_text()
@@ -766,34 +766,10 @@ class RouterOsTest(unittest.TestCase):
             finally:
                 self.chr.run(dns)
 
-    def test_10_upgrade_from_v2(self):
-        v2 = subprocess.run(["git", "show", "v2.0.0:routeros/install.rsc"], cwd=REPO,
-                            capture_output=True, check=True).stdout
-        self.uninstall()
-        with tempfile.TemporaryDirectory(prefix="mbl-v2-") as d:
-            f = Path(d) / "install.rsc"
-            f.write_bytes(v2)
-            self.chr.upload(f, "install.rsc")
-        self.chr.run(f':global mblUrlBase "{self.base}"; /import install.rsc', timeout=600)
-        self.assertEqual(self.num("/file", 'name="mbl-last.rsc"'), 1, self.chr.run("/file print"))
-        before = self.count(self.active_list())
-        self.assertGreaterEqual(before, MIN_ENTRIES)
-        v2_list = self.active_list()
-        rsc = 'name~"^mbl-.*\\\\.rsc"'
-        self.assertEqual(self.num("/file", rsc), 1, self.chr.run("/file print"))  # pattern control
-        token = self.mark()
-        # every sample sees the rule on a populated list, with no gap at all
-        self.assert_always_protected(self.install_sampled())
-        log = self.log_after(token)
-        # the v3 load itself happened, whatever the final count says
-        self.assertIn(f"MBL: loaded {LIST_SIZE} entries", log)
-        self.assertIn("MBL: removed v2 files", log)
-        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
-        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL-OLD:"'), 0)
-        self.assertEqual(self.num("/file", rsc), 0, self.chr.run("/file print"))
-        self.assertEqual(self.num("/file", 'name="mbl-last.txt"'), 1, self.chr.run("/file print"))
-        # the v3 load went to the other list (it does not clear the v2 one first)
-        self.assertNotEqual(self.active_list(), v2_list)
+    def test_10_reinstall_after_uninstall(self):
+        # test_09 leaves the router uninstalled; the cases below need it installed.
+        out = self.install(self.base)
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6, out)
         self.assertEqual(self.count(self.active_list()), LIST_SIZE)
 
     def test_11_injected_lines_never_run(self):
@@ -840,16 +816,12 @@ class RouterOsTest(unittest.TestCase):
         finally:
             self.restore_path(name)
 
-    def test_13b_new_project_name_header_accepted(self):
-        name = "routeros-full-newname.txt"
+    def test_13b_old_project_name_header_rejected(self):
+        name = "routeros-full-oldname.txt"
         self.serve_variant(name)
         try:
-            old = self.active_list()
-            token = self.mark()
-            self.update()
-            self.assertNotEqual(self.active_list(), old)
-            self.assertEqual(self.count(self.active_list()), LIST_SIZE)
-            self.assertIn(f"MBL: loaded {LIST_SIZE} entries", self.log_after(token))
+            self.assert_failed_update_keeps_active(
+                f"/{name}", "MBL: mbl-new.txt rejected (no header)")
         finally:
             self.restore_path(name)
 

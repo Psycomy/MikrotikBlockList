@@ -86,7 +86,7 @@ Paste this into the RouterOS terminal (Winbox, WebFig or SSH):
 /tool fetch url="https://raw.githubusercontent.com/Psycomy/MikroBlockList/main/routeros/install.rsc" check-certificate=yes; /import install.rsc
 ```
 
-It prints `MBL: installed (script 3.4.0, variant full, ipv6 no)` when the first list is loaded (about 20 seconds). The installer is
+It prints `MBL: installed (script 3.4.1, variant full, ipv6 no)` when the first list is loaded (about 20 seconds). The installer is
 idempotent: run it again at any time to upgrade or repair; nothing is duplicated and your
 allowlist is kept.
 
@@ -109,7 +109,7 @@ To install `lite`, put `:global mblVariant "lite"; ` in front of the one-liner:
 - The global lives until the router reboots, so if you reinstall in the same session, set it
   explicitly (`"full"`, `"lite"`, or `""` to keep what is installed).
 - Any value other than `full` or `lite` stops the installer before it changes anything.
-- The final message tells you which one is installed: `MBL: installed (script 3.4.0, variant lite, ipv6 no)`.
+- The final message tells you which one is installed: `MBL: installed (script 3.4.1, variant lite, ipv6 no)`.
 - A downloaded list whose header says another variant is rejected (`bad header`).
 
 ### Optional IPv6
@@ -130,7 +130,7 @@ the one-liner (it combines with `:global mblVariant "lite"; `):
 - Any value other than `true` or `false` stops the installer before it changes anything.
 - The global lives until the router reboots, so set it explicitly (`true`, `false`, or `""` to keep
   what is installed) when you reinstall in the same session.
-- The final message tells you the state: `MBL: installed (script 3.4.0, variant full, ipv6 yes)`.
+- The final message tells you the state: `MBL: installed (script 3.4.1, variant full, ipv6 yes)`.
 - Add your own IPv6 exceptions the same way as for IPv4:
   `/ipv6 firewall address-list add list=mbl6-allow address=2001:db8::/32 comment="my office"`.
 - **Best effort:** IPv6 never blocks IPv4. If the IPv6 list fails its checks on the build, no IPv6
@@ -150,10 +150,6 @@ IPv6 address or a CIDR with a prefix from 19 to 128, and a file needs at least 2
 must load: the count added must equal the header's `entries` exactly. The 1 % invalid-line budget
 only tolerates stray lines (comments, blanks, junk) around the entries; on a small `lite` list it
 rounds down to no invalid line at all (the generator output is clean).
-
-**Upgrading from v2:** run the same install one-liner again. The old list stays active while the
-first v3 list loads, and the old `mbl-*.rsc` boot copies are removed automatically after the first
-successful v3 load (log: `MBL: removed v2 files`).
 
 > [!TIP]
 > **Certificate error on the one-liner?** On RouterOS 7.21–7.23, or with a customised trust
@@ -237,10 +233,6 @@ a newer version of the router script has been published. Run the install command
 to repeat and keeps your allowlist. The router never updates itself, and the notice only appears when
 the published version is newer. The blocklist itself refreshes daily without any action.
 
-Routers installed before 3.1.0 (v2 and 3.0.0) do not have the check, so they never show this
-notice: reinstall once with the install command to get it. Routers on 3.2.0 will see the 3.3.0
-notice and can reinstall: they keep their variant and stay IPv4-only unless you enable IPv6
-(see [Optional IPv6](#optional-ipv6)).
 See the [CHANGELOG](CHANGELOG.md) for what changed.
 
 ## Automatic CDN allowlist
@@ -329,7 +321,6 @@ The [`lists`](https://github.com/Psycomy/MikroBlockList/tree/lists) branch conta
 |---|---|
 | `routeros-full.txt` | List in the router format (header line, one address per line, footer line); this is what v3 routers on `full` download |
 | `routeros-lite.txt` | Same format, `lite` variant (5 sources, about 4,300 entries); what v3 routers on `lite` download |
-| `blocklist.rsc` | **Legacy** and `full` only (there is no `lite` version); only for routers still on v2; published unchanged and kept at least until 2027-04-30. v3 routers do not use it |
 | `blocklist.txt` | Plain list (`full`), one IPv4 address or CIDR per line, no header — **handy for other firewalls** (pfSense, OPNsense, iptables/ipset, nftables…) |
 | `blocklist-lite.txt` | The same plain list for the `lite` variant |
 | `routeros6-full.txt`, `routeros6-lite.txt` | IPv6 lists in the router format (`family=ipv6` in the header); only IPv6 routers download them. Not published on a day when IPv6 fails its checks |
@@ -344,7 +335,7 @@ The [`lists`](https://github.com/Psycomy/MikroBlockList/tree/lists) branch conta
 1. `mbl-update` downloads `routeros-<variant>.txt` (`full` or `lite`, as installed) over HTTPS with `check-certificate=yes`. A failed
    download changes nothing.
 2. It checks the size (at least 100,000 bytes for `full`, 20,000 for `lite`) and reads the file with `/file read` in 32 KiB
-   chunks. The first line must be the header (`# MikrotikBlockList v3 format=1 variant=<variant>
+   chunks. The first line must be the header (`# MikroBlockList v3 format=1 variant=<variant>
    family=ipv4 ... entries=N script=<version>`), so an HTML error page is never accepted.
 3. Every other line is only a value: it must be an IPv4 address or a CIDR with a prefix from 8 to
    32, and only then is it added to the list the rules are **not** using (`mbl-a` or `mbl-b`).
@@ -507,7 +498,7 @@ poca RAM o si solo quieres bloquear C2 y los rangos de ataque más graves. Para 
 - La global dura hasta que el router se reinicia; si reinstalas en la misma sesión, defínela de forma
   explícita (`"full"`, `"lite"` o `""` para conservar lo instalado).
 - Cualquier valor distinto de `full` o `lite` detiene el instalador antes de cambiar nada.
-- El mensaje final indica la variante: `MBL: installed (script 3.4.0, variant lite, ipv6 no)`.
+- El mensaje final indica la variante: `MBL: installed (script 3.4.1, variant lite, ipv6 no)`.
 - Una lista descargada con otra `variant=` en la cabecera se rechaza (`bad header`).
 - Límites de publicación: `full` 5.000 a 150.000 entradas, `lite` 1.000 a 20.000; si falla cualquiera
   de las dos, no se publica nada. Tamaño mínimo del fichero en el router: 100.000 bytes (`full`) y
@@ -516,8 +507,7 @@ poca RAM o si solo quieres bloquear C2 y los rangos de ataque más graves. Para 
   ejecución se acepta con un aviso (solo se omite la comprobación de caída).
 
 **Ficheros publicados:** `routeros-full.txt` y `routeros-lite.txt` (formato del router, con cabecera
-y pie), `blocklist.rsc` (**legado** para routers con v2, solo `full`, se mantiene al menos hasta
-2027-04-30), y `blocklist.txt` y `blocklist-lite.txt` (una entrada por línea, sin cabecera, para otros
+y pie), y `blocklist.txt` y `blocklist-lite.txt` (una entrada por línea, sin cabecera, para otros
 firewalls). `stats.json` añade `variants` con el total de cada variante y `cdn_allowlist`.
 
 ### IPv6 opcional
@@ -538,7 +528,7 @@ Viene **desactivado**. Para bloquear también atacantes IPv6, pon
 - Cualquier valor distinto de `true` o `false` detiene el instalador antes de cambiar nada.
 - La global dura hasta que el router se reinicia; si reinstalas en la misma sesión, defínela de forma
   explícita (`true`, `false` o `""` para conservar lo instalado).
-- El mensaje final indica el estado: `MBL: installed (script 3.4.0, variant full, ipv6 yes)`.
+- El mensaje final indica el estado: `MBL: installed (script 3.4.1, variant full, ipv6 yes)`.
 - Tus excepciones IPv6 van igual que las de IPv4:
   `/ipv6 firewall address-list add list=mbl6-allow address=2001:db8::/32 comment="mi oficina"`.
 - **Mejor esfuerzo:** IPv6 nunca bloquea IPv4. Si la lista IPv6 no pasa las comprobaciones en la
@@ -561,10 +551,6 @@ Viene **desactivado**. Para bloquear también atacantes IPv6, pon
 - Ficheros: `routeros6-full.txt` y `routeros6-lite.txt` (formato del router, `family=ipv6`), y
   `blocklist6.txt` y `blocklist6-lite.txt` (una entrada por línea, para otros firewalls). `stats.json`
   añade `ipv6` y `entries6` por fuente; `entries` pasa a contar solo IPv4.
-
-**Actualizar desde la v2:** vuelve a ejecutar el mismo comando de instalación. La lista antigua
-sigue activa mientras carga la primera lista v3, y los `mbl-*.rsc` antiguos se borran solos tras la
-primera carga v3 correcta (log `MBL: removed v2 files`).
 
 > [!TIP]
 > **¿Error de certificado en el comando?** En RouterOS 7.21–7.23, o con un almacén de confianza
@@ -644,11 +630,6 @@ hay publicada una versión más nueva del script. Basta con volver a ejecutar el
 se puede repetir sin riesgo y conserva tu allowlist. El router nunca se actualiza solo y el aviso solo
 sale si la versión publicada es mayor. La lista se renueva cada día sin hacer nada. Los cambios están
 en el [CHANGELOG](CHANGELOG.md).
-
-Los routers instalados antes de la 3.1.0 (v2 y 3.0.0) no incluyen esta comprobación y nunca muestran
-el aviso: reinstala una vez con el comando de instalación para activarla. Los routers con la 3.2.0
-verán el aviso de la 3.3.0 y pueden reinstalar: conservan su variante y siguen solo con IPv4 salvo que
-actives IPv6 (ver [IPv6 opcional](#ipv6-opcional)).
 
 ### Desinstalación
 
