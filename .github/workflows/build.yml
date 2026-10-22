@@ -56,12 +56,22 @@ jobs:
       - name: Month for DB-IP cache key
         id: month
         run: echo "month=$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      # Restore and save are separate so that last month's file (used while this
+      # month's is not out yet) is never saved under this month's key: caches are
+      # immutable, and that would force a download on every run until month end.
+      - uses: actions/cache/restore@v6
+        id: dbip-cache
         with:
           path: .dbip
           key: dbip-${{ steps.month.outputs.month }}
       - name: Fetch DB-IP
+        id: dbip
         run: echo "DBIP=$(python -m mbl dbip-fetch --cache .dbip)" >> "$GITHUB_ENV"
+      - uses: actions/cache/save@v6
+        if: steps.dbip-cache.outputs.cache-hit != 'true' && contains(env.DBIP, steps.month.outputs.month)
+        with:
+          path: .dbip
+          key: dbip-${{ steps.month.outputs.month }}
 
       # Exit code 1 (safety checks failed) fails the step and therefore the
       # job, so nothing is published. allow_growth is only set by a manual

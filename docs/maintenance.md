@@ -21,6 +21,15 @@ python3 -m mbl health --stats https://raw.githubusercontent.com/Psycomy/MikroBlo
 
 It prints one line per problem (nothing when healthy) and exits with 3 when there is a problem.
 
+## Lookup page
+
+The "is this IP listed?" page lives in `site/` and is served at
+<https://psycomy.github.io/MikroBlockList/>. It reads `lookup.json` from the `lists` branch (written
+by the daily `build`) and is deployed by the `pages` workflow on pushes that touch `site/**`.
+
+**One-time setup:** in the repository go to **Settings → Pages → Build and deployment → Source:
+GitHub Actions**. Until that is set, the first `pages` run fails; rerun it afterwards.
+
 ## `build-health` lines
 
 - **`source X failed: ...`**: the download failed. One bad day is normal (the source is optional

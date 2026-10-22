@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  parseQuery, buildIndex, search, reportUrl, formatCount, maskCidr, resultTone, exampleIp,
+  parseQuery, buildIndex, search, reportUrl, formatCount, maskCidr, resultTone, exampleIp, countryKind,
 } from './core.js';
 
 const NOW = new Date('2026-10-22T06:00:00Z');
@@ -322,4 +322,17 @@ test('exampleIp: a listed address from the first full entry with a country', () 
   })), '10.0.0.1');
   assert.equal(exampleIp(buildIndex({ generated_at: NOW.toISOString(), sources: [],
     v4: { full: [], lite: [] } })), null);
+});
+
+test('countryKind: no DB-IP data shows nothing, never "several countries"', () => {
+  assert.equal(countryKind('', null), 'none');
+  assert.equal(countryKind('', ''), 'none');
+  assert.equal(countryKind('DE', null), 'none');
+});
+
+test('countryKind: with DB-IP data the code distinguishes several, unknown and a country', () => {
+  assert.equal(countryKind('', '2026-10'), 'several');
+  assert.equal(countryKind('ZZ', '2026-10'), 'unknown');
+  assert.equal(countryKind('zz', '2026-10'), 'unknown');
+  assert.equal(countryKind('DE', '2026-10'), 'code');
 });

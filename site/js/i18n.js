@@ -209,13 +209,21 @@ export function flag(cc) {
 const regionNames = {};
 /** The country name of an ISO alpha-2 code in the current language; the code if unknown. */
 export function countryName(cc) {
-  if (!cc) return t('several_countries');
+  if (!cc) return '';
   try {
     regionNames[current] ||= new Intl.DisplayNames([current], { type: 'region' });
     return regionNames[current].of(cc.toUpperCase()) || cc;
   } catch {
     return cc;
   }
+}
+
+/** The text for a countryKind() result: flag and name, a label, or '' for 'none'. */
+export function countryText(kind, cc) {
+  if (kind === 'code') return `${flag(cc)} ${countryName(cc)}`;
+  if (kind === 'several') return t('several_countries');
+  if (kind === 'unknown') return t('unknown_country');
+  return '';
 }
 
 /** A source category ('attack', 'c2') in the current language. */

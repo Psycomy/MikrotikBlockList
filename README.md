@@ -488,6 +488,8 @@ only to describe the routers this project works with.
 **MikroBlockList** genera cada día una lista IPv4 (e IPv6, opcional) de atacantes y servidores C2 de botnets a
 partir de fuentes públicas, y la bloquea en el firewall *raw* de tu router MikroTik (RouterOS v7).
 
+**[¿Está mi IP en la lista?](https://psycomy.github.io/MikroBlockList/)** Comprueba una IP o un rango en tu navegador.
+
 > [!WARNING]
 > **Solo para uso doméstico / no comercial: varias fuentes prohíben el uso comercial.**
 > Algunas son CC BY-NC-SA o "solo no comercial", y otras no tienen una licencia de

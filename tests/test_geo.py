@@ -52,15 +52,19 @@ class CountryDbTests(unittest.TestCase):
     def test_adjacent_rows_same_country_are_one(self):
         self.assertEqual(self.db.country(ip4("5.0.0.0"), ip4("5.0.1.255"), 4), "ES")
 
-    def test_country_uncovered_and_zz_empty(self):
-        self.assertEqual(self.db.country(ip4("3.0.0.0"), ip4("3.0.0.255"), 4), "")
-        self.assertEqual(self.db.country(ip4("4.0.0.0"), ip4("4.0.0.255"), 4), "")
-        self.assertEqual(self.db.country(0, 0, 4), "")
+    def test_country_uncovered_and_zz_are_zz(self):
+        self.assertEqual(self.db.country(ip4("3.0.0.0"), ip4("3.0.0.255"), 4), "ZZ")
+        self.assertEqual(self.db.country(ip4("4.0.0.0"), ip4("4.0.0.255"), 4), "ZZ")
+        self.assertEqual(self.db.country(0, 0, 4), "ZZ")
+
+    def test_gap_then_row_is_several(self):
+        # starts in the gap before 5.0.0.0/ES and reaches into it: more than one answer
+        self.assertEqual(self.db.country(ip4("4.255.255.0"), ip4("5.0.0.10"), 4), "")
 
     def test_ipv6_lookup(self):
         self.assertEqual(self.db.country(ip6("2001:200::"), ip6("2001:200::ffff"), 6), "JP")
         self.assertEqual(self.db.country(ip6("2a00:1450:4001::"), ip6("2a00:1450:4001::ffff"), 6), "IE")
-        self.assertEqual(self.db.country(ip6("2001:db8::"), ip6("2001:db8::1"), 6), "")
+        self.assertEqual(self.db.country(ip6("2001:db8::"), ip6("2001:db8::1"), 6), "ZZ")
         self.assertEqual(self.db.country(ip6("2001:200::"), ip6("2a00:1450::1"), 6), "")
 
     def test_month_from_filename(self):

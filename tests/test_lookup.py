@@ -31,7 +31,20 @@ class FakeGeo:
         return "DE" if version == 4 else "NL"
 
 
+class ZzGeo:
+    month = "2026-10"
+
+    def country(self, first, last, version):
+        return "ZZ"
+
+
 class LookupTest(unittest.TestCase):
+    def test_unknown_country_code_is_passed_through(self):
+        results = [_result("a", ["1.2.3.0/24"])]
+        data = lookup_data({"full": _v4("1.2.3.0/24"), "lite": []}, None, results, WHEN, ZzGeo())
+        self.assertEqual(data["v4"]["full"][0][2], "ZZ")
+        self.assertEqual(data["dbip_month"], "2026-10")
+
     def test_membership_on_collapsed_entry(self):
         results = [_result("a", ["1.2.3.0/25"]), _result("b", ["1.2.3.128/25"])]
         data = lookup_data({"full": _v4("1.2.3.0/24"), "lite": []}, None, results, WHEN, None)

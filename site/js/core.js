@@ -299,7 +299,7 @@ export function maskCidr(cidr) {
  */
 export function exampleIp(index) {
   const items = (index && index.v4 && index.v4.full.items) || [];
-  const item = items.find((it) => it[2]) || items[0];
+  const item = items.find((it) => it[2] && it[2] !== 'ZZ') || items[0];
   const net = item ? parseNetwork(item[0]) : null;
   if (!net || net.version !== 4) return null;
   return v4Text(net.end - net.start > 1n ? net.start + 1n : net.start);
@@ -316,6 +316,18 @@ export function resultTone(result) {
 }
 
 /** A whole number with thousands separators: "39.480" (es) or "39,480" (en). */
+/**
+ * What to show for an entry's country code. `dbipMonth` is null when lookup.json has no
+ * DB-IP data at all (every cc is ''): then there is nothing to say ('none'). With data,
+ * '' means the entry spans several countries and 'ZZ' that DB-IP has no country for it.
+ */
+export function countryKind(cc, dbipMonth) {
+  if (!dbipMonth) return 'none';
+  if (!cc) return 'several';
+  if (cc.toUpperCase() === 'ZZ') return 'unknown';
+  return 'code';
+}
+
 export function formatCount(n, lang) {
   const sep = lang === 'es' ? '.' : ',';
   return String(Math.trunc(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, sep);

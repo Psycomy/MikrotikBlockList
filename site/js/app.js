@@ -1,7 +1,7 @@
 // Page wiring: map, language, loading lookup.json, status line, footer and ticker.
-import { buildIndex, formatCount, maskCidr, exampleIp } from './core.js';
+import { buildIndex, countryKind, formatCount, maskCidr, exampleIp } from './core.js';
 import { createMap } from './map.js';
-import { t, lang, setLang, applyStrings, flag, countryName, categoryName } from './i18n.js';
+import { t, lang, setLang, applyStrings, countryText, categoryName } from './i18n.js';
 
 const DEFAULT_DATA = 'https://raw.githubusercontent.com/Psycomy/MikroBlockList/lists/lookup.json';
 const NARROW = 700;
@@ -102,6 +102,7 @@ function setStatus(next) {
 
 function renderStatus() {
   const { st, retry } = els;
+  st.setAttribute('aria-live', 'polite'); // loading, ready and error are announced here
   st.classList.remove('bad', 'ok');
   st.classList.toggle('warn', status === 'error');
   retry.hidden = status !== 'error';
@@ -204,7 +205,7 @@ function tickerLine() {
   const ip = document.createElement('span');
   ip.className = 'tk-ip';
   ip.textContent = `▲ ${maskCidr(entry.cidr)}`;
-  const parts = [entry.cc ? `${flag(entry.cc)} ${countryName(entry.cc)}` : countryName('')];
+  const parts = [countryText(countryKind(entry.cc, index.dbipMonth), entry.cc)].filter(Boolean);
   if (entry.src) parts.push(entry.src.name, categoryName(entry.src.category));
   const rest = document.createElement('span');
   rest.textContent = ` · ${parts.join(' · ')}`;

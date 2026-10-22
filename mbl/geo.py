@@ -58,13 +58,17 @@ class CountryDb:
         codes.append(code)
 
     def country(self, first: int, last: int, version: int) -> str:
-        """Country code when one row covers the whole range, else ''. 'ZZ' is unknown."""
+        """Country code when one row covers the whole range; '' when the range spans several
+        rows (several countries); 'ZZ' when DB-IP has no country (ZZ row or uncovered)."""
         starts = self._starts[version]
         i = bisect_right(starts, first) - 1
-        if i < 0 or last > self._ends[version][i] or last < first:
-            return ""
-        code = self._codes[version][i]
-        return "" if code == "ZZ" else code
+        if last < first:
+            return "ZZ"
+        if i >= 0 and first <= self._ends[version][i]:
+            return self._codes[version][i] if last <= self._ends[version][i] else ""
+        # first lies in a gap: still several countries when a later row starts inside the range
+        nxt = i + 1
+        return "" if nxt < len(starts) and starts[nxt] <= last else "ZZ"
 
 
 def _download(url: str) -> bytes:

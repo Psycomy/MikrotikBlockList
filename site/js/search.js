@@ -1,10 +1,10 @@
 // The search flow: scan animation, the map effects and the result cards. Entry module of the
 // page (it loads app.js, which wires everything else).
-import { parseQuery, search, reportUrl, formatCount, resultTone } from './core.js';
+import { parseQuery, search, countryKind, reportUrl, formatCount, resultTone } from './core.js';
 import {
   els, map, index, centroids, onSearch, showIdleStatus, dataStatus, formatWhen,
 } from './app.js';
-import { t, lang, flag, countryName } from './i18n.js';
+import { t, lang, countryText } from './i18n.js';
 import { externalLink, badge } from './sources.js';
 
 const SCAN_MS = 1000;
@@ -48,6 +48,8 @@ function setLine(text, tone) {
 function startScan() {
   els.form.classList.add('scanning');
   els.st.setAttribute('aria-busy', 'true');
+  // the result card (#r) announces the verdict; keep #st quiet until the idle status returns
+  els.st.setAttribute('aria-live', 'off');
   bar.style.width = '0';
   wave(RGB.cyan);
 }
@@ -155,9 +157,11 @@ function pill(text, on, sr) {
   return p;
 }
 
-function country(entry, known) {
-  if (!known) return t('unknown_country');
-  return entry.cc ? `${flag(entry.cc)} ${countryName(entry.cc)}` : countryName('');
+/** The country text of an entry; '' when this lookup.json has no DB-IP data. */
+function country(entry, hasCountry = true) {
+  if (!index.dbipMonth) return '';
+  if (!hasCountry) return t('unknown_country'); // a lite-only entry carries no country
+  return countryText(countryKind(entry.cc, index.dbipMonth), entry.cc);
 }
 
 function sourceLinks(sources) {
@@ -208,7 +212,8 @@ function resultCard(query, result) {
     const entry = result.entries[0];
     const fromFull = result.inFull; // a lite-only entry carries no country or sources
     card.append(verdict('⛔', 'v_blocked', query.text));
-    card.append(el('div', 'where', country(entry, fromFull)));
+    const where = country(entry, fromFull);
+    if (where) card.append(el('div', 'where', where));
     const row = el('div', 'row');
     row.append(
       pill(t('inside', { cidr: entry.cidr }), true),
@@ -226,9 +231,8 @@ function resultCard(query, result) {
     for (const entry of result.entries) {
       const li = el('li');
       li.append(el('span', 'hit-cidr', entry.cidr));
-      const known = entry.sources.length > 0; // lite rows carry no country or sources
-      const bits = [country(entry, known)];
-      if (known) bits.push(entry.sources.map((s) => s.name).join(', '));
+      const bits = [country(entry)].filter(Boolean);
+      if (entry.sources.length) bits.push(entry.sources.map((s) => s.name).join(', '));
       li.append(el('span', 'hit-rest', ` · ${bits.join(' · ')}`));
       list.append(li);
     }
