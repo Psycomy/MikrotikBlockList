@@ -46,6 +46,7 @@ body:
         - binarydefense
         - turris-greylist
         - threatcluster
+        - c2intel
         - datashield
         - abuseipdb-s100
       default: 0
