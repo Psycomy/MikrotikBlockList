@@ -6,6 +6,7 @@ from pathlib import Path
 
 from mbl.build import build
 from mbl.cdn import DEFAULT_SNAPSHOT, fetch_live, write_snapshot
+from mbl.geo import fetch_dbip
 from mbl.health import run as health
 
 
@@ -26,7 +27,16 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--out", type=Path, default=DEFAULT_SNAPSHOT)
     h = sub.add_parser("health", help="check a published build; prints one line per problem")
     h.add_argument("--stats", required=True, metavar="URL_OR_PATH")
+    d = sub.add_parser("dbip-fetch", help="download the monthly DB-IP country file; prints its path")
+    d.add_argument("--cache", type=Path, required=True)
     args = parser.parse_args(argv)
+    if args.command == "dbip-fetch":
+        found = fetch_dbip(args.cache, datetime.now(timezone.utc).date())
+        if found is None:
+            print("warning: no DB-IP country file available", file=sys.stderr)
+        else:
+            print(found)
+        return 0
     if args.command == "health":
         found = health(args.stats)
         for line in found:
