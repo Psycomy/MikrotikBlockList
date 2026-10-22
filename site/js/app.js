@@ -1,5 +1,5 @@
 // Page wiring: map, language, loading lookup.json, status line, footer and ticker.
-import { buildIndex, formatCount } from './core.js';
+import { buildIndex, formatCount, maskCidr } from './core.js';
 import { createMap } from './map.js';
 import { t, lang, setLang, applyStrings, flag, countryName, categoryName } from './i18n.js';
 
@@ -89,8 +89,20 @@ async function loadOnMain(url) {
 
 let status = 'loading';
 
+/** 'loading', 'ready' or 'error'; a 'datastatus' event on document fires on each change. */
+export function dataStatus() {
+  return status;
+}
+
+function setStatus(next) {
+  status = next;
+  renderStatus();
+  document.dispatchEvent(new CustomEvent('datastatus', { detail: next }));
+}
+
 function renderStatus() {
   const { st, retry } = els;
+  st.classList.remove('bad', 'ok');
   st.classList.toggle('warn', status === 'error');
   retry.hidden = status !== 'error';
   if (status === 'loading') st.textContent = t('loading');
@@ -109,8 +121,7 @@ export function showIdleStatus() {
 }
 
 async function load() {
-  status = 'loading';
-  renderStatus();
+  setStatus('loading');
   renderFooter();
   const url = dataUrl();
   // let the map paint its first frames before any network or parsing work
@@ -130,21 +141,20 @@ async function load() {
     // structured clone keeps BigInt and Date; check the shape anyway
     if (!built || !built.v4 || !(built.generatedAt instanceof Date)) throw new Error('bad index');
     index = built;
-    status = 'ready';
-    renderStatus();
+    resolveReady(index);
+    setStatus('ready');
     renderFooter();
     startTicker();
-    resolveReady(index);
   } catch (err) {
     console.warn('lookup.json unavailable:', err.message || err);
-    status = 'error';
-    renderStatus();
+    setStatus('error');
     renderFooter();
   }
 }
 
 // --- footer ---
-function formatWhen(date) {
+/** A date as "22 Oct 2026, 04:17 UTC" in the current language; '?' if invalid. */
+export function formatWhen(date) {
   if (Number.isNaN(date.getTime())) return '?';
   const text = new Intl.DateTimeFormat(lang() === 'es' ? 'es-ES' : 'en-GB', {
     timeZone: 'UTC', day: 'numeric', month: 'short', year: 'numeric',
@@ -175,13 +185,6 @@ function renderFooter() {
 const TICK_MS = 1500;
 const TICK_LINES = 6;
 let tickTimer = null;
-
-function maskCidr(cidr) {
-  const addr = cidr.split('/')[0];
-  if (addr.includes(':')) return `${addr.split(':').slice(0, 2).join(':')}:x::`;
-  const p = addr.split('.');
-  return `${p[0]}.${p[1]}.x.x`;
-}
 
 function randomEntry() {
   const v6 = index.v6 && index.v6.full.items;

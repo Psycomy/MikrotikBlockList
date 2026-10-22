@@ -2,7 +2,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseQuery, buildIndex, search, reportUrl, formatCount } from './core.js';
+import {
+  parseQuery, buildIndex, search, reportUrl, formatCount, maskCidr, resultTone,
+} from './core.js';
 
 const NOW = new Date('2026-10-22T06:00:00Z');
 
@@ -282,4 +284,25 @@ test('formatCount groups thousands per language', () => {
   assert.equal(formatCount(1234567, 'es'), '1.234.567');
   assert.equal(formatCount(999, 'en'), '999');
   assert.equal(formatCount(0, 'es'), '0');
+});
+
+test('maskCidr hides the host part of both families', () => {
+  assert.equal(maskCidr('203.0.113.0/24'), '203.0.x.x');
+  assert.equal(maskCidr('1.2.3.4/32'), '1.2.x.x');
+  assert.equal(maskCidr('2a0e::/32'), '2a0e:xxxx::');
+  assert.equal(maskCidr('2001:470:1:332::8/128'), '2001:470:xxxx::');
+  assert.equal(maskCidr('::/0'), '0:xxxx::');
+  assert.equal(maskCidr('2001:0:5::/48'), '2001:xxxx::');
+  assert.equal(maskCidr('nonsense'), '?');
+  assert.equal(maskCidr(undefined), '?');
+});
+
+test('resultTone: unknown states are amber, never green', () => {
+  const r = (state, stale = false) => ({ state, stale });
+  assert.equal(resultTone(r('blocked')), 'bad');
+  assert.equal(resultTone(r('blocked', true)), 'bad');
+  assert.equal(resultTone(r('clear')), 'ok');
+  assert.equal(resultTone(r('clear', true)), 'warn');
+  assert.equal(resultTone(r('partial')), 'warn');
+  assert.equal(resultTone(r('v6-unpublished')), 'warn');
 });

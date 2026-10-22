@@ -54,15 +54,38 @@
   <div id="foot-counts"></div>
   <div class="foot-links">
     <span class="fl"><a href="https://db-ip.com" rel="noopener" data-i18n="dbip"></a><span id="dbip-month"></span></span>
+    <span class="fl"><span class="sep">·</span><button type="button" id="src-open" class="linkbtn" aria-haspopup="dialog" data-i18n="sources_link"></button></span>
     <span class="fl"><span class="sep">·</span><span data-i18n="license"></span></span>
     <span class="fl"><span class="sep">·</span><a href="https://github.com/Psycomy/MikroBlockList" rel="noopener" data-i18n="repo"></a></span>
     <span class="fl"><span class="sep">·</span><a href="https://github.com/Psycomy/MikroBlockList#readme" rel="noopener" data-i18n="readme"></a></span>
   </div>
 </footer>
 
+<dialog id="sources" class="sources" aria-labelledby="src-title">
+ <div class="dlg-in">
+  <div class="dlg-head">
+    <h2 id="src-title" data-i18n="sources_title"></h2>
+    <button type="button" class="dlg-close" data-i18n-attr="aria-label:close;title:close"><span aria-hidden="true">×</span></button>
+  </div>
+  <p class="dlg-intro" data-i18n="sources_intro"></p>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr>
+        <th scope="col" data-i18n="th_source"></th>
+        <th scope="col" data-i18n="th_category"></th>
+        <th scope="col" data-i18n="th_entries"></th>
+        <th scope="col" data-i18n="th_terms"></th>
+        <th scope="col" data-i18n="th_notice"></th>
+      </tr></thead>
+      <tbody id="src-body"></tbody>
+    </table>
+  </div>
+ </div>
+</dialog>
+
 <script src="vendor/d3-array.min.js"></script>
 <script src="vendor/d3-geo.min.js"></script>
 <script src="vendor/topojson-client.min.js"></script>
-<script type="module" src="js/app.js"></script>
+<script type="module" src="js/search.js"></script>
 </body>
 </html>

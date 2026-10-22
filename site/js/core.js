@@ -277,6 +277,32 @@ export function reportUrl(query, result) {
     .map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&')}`;
 }
 
+/**
+ * A CIDR with its host part hidden, for the ticker: "203.0.x.x" (first two octets) or
+ * "2001:470:xxxx::" (first two hextets, a trailing zero one dropped). '?' if unparsable.
+ */
+export function maskCidr(cidr) {
+  const net = typeof cidr === 'string' ? parseNetwork(cidr.trim()) : null;
+  if (!net) return '?';
+  if (net.version === 4) {
+    return `${(net.start >> 24n) & 0xFFn}.${(net.start >> 16n) & 0xFFn}.x.x`;
+  }
+  const groups = [(net.start >> 112n) & 0xFFFFn, (net.start >> 96n) & 0xFFFFn]
+    .map((g) => g.toString(16));
+  if (groups[1] === '0') groups.pop();
+  return `${groups.join(':')}:xxxx::`;
+}
+
+/**
+ * The colour of a result: 'bad' (blocked, red), 'warn' (partial, IPv6 unpublished or a stale
+ * "not listed", amber) or 'ok' (not listed with fresh data, green). Unknowns are never green.
+ */
+export function resultTone(result) {
+  if (result.state === 'blocked') return 'bad';
+  if (result.state === 'clear' && !result.stale) return 'ok';
+  return 'warn';
+}
+
 /** A whole number with thousands separators: "39.480" (es) or "39,480" (en). */
 export function formatCount(n, lang) {
   const sep = lang === 'es' ? '.' : ',';
