@@ -251,7 +251,7 @@ Los casos comparten un router y corren en orden.
 | `test_14c_no_notice_when_not_newer` | Versión publicada igual o menor que la instalada: sin aviso |
 | `test_14d_bad_script_version_ignored` | Versión publicada con basura (`3.1.0;/system reboot`, `abc`, vacía): sin aviso, la carga termina bien y nada se ejecuta |
 | `test_14e_numeric_comparison` | Comparación numérica y componente patch: publicadas `patch+1`, `10.0.0` (una comparación de cadenas la ordenaría por debajo de `3.1.0`) y `3.10.0` frente a `3.1.0` instalada avisan cada una con exactamente 1 línea |
-| `test_14f_install_lite` | `:global mblVariant "lite"` antes del instalador: descarga `/routeros-lite.txt`, la lista activa tiene 2000 entradas, el mensaje final es `MBL: installed (script <v>, variant lite)` y `mbl-update` apunta a `routeros-lite.txt` |
+| `test_14f_install_lite` | `:global mblVariant "lite"` antes del instalador: descarga `/routeros-lite.txt`, la lista activa tiene 2000 entradas, el mensaje final es `MBL: installed (script <v>, variant lite, ipv6 no, mode block)` y `mbl-update` apunta a `routeros-lite.txt` |
 | `test_14g_reinstall_keeps_lite` | Reinstalar con `mblVariant ""` conserva `lite`: pide `routeros-lite.txt`, nunca `routeros-full.txt`, y la lista sigue en 2000 entradas |
 | `test_14h_invalid_variant_rejected` | `mblVariant "mini"`: el instalador falla con `invalid mblVariant` antes de cambiar nada (6 reglas `MBL:`, misma lista activa y mismas entradas, ninguna petición al servidor, `mbl-update` sigue con `lite`) |
 | `test_14i_variant_mismatch_rejected` | El router en `lite` recibe una cabecera `variant=full`: rechazado con `bad header` y la lista activa no cambia |
@@ -260,7 +260,14 @@ Los casos comparten un router y corren en orden.
 | `test_14l_install_ipv6` | Primero con `/routeros6-full.txt` en 404: IPv4 se instala y el mensaje final dice `ipv6 yes - first ipv6 load failed, see log`. Luego `mblIpv6 true`: descarga `/routeros6-full.txt`, 6 reglas `MBL:` en `/ipv6 firewall raw`, `LIST6_SIZE` (300) entradas en `mbl6-a`/`mbl6-b`, `MBL: loaded N ipv6 entries into <lista>` y mensaje final `ipv6 yes`; IPv4 intacto; reinstalar con `mblIpv6 ""` conserva IPv6 |
 | `test_14m_ipv6_line_validation` | Fichero IPv6 con líneas inválidas (IPv4, `::/0`, prefijo `/129`, basura): no se convierten en entradas y se cargan solo las válidas (`IPV6_VALIDATION_SIZE`, 600) |
 | `test_14n_ipv6_failure_never_touches_ipv4` | Lista IPv6 caída (404) o truncada: IPv4 carga y conmuta con normalidad (6 reglas, `LIST_SIZE` entradas), la lista IPv6 activa no cambia, queda un log `MBL: ipv6 ...` con el motivo de cada caso (`download failed` / `rejected`) y el lock se libera |
+| `test_14nb_ipv6_log_mode` | `mblMode "log"` con IPv6: las tres reglas de descarte de `/ip` y `/ipv6 firewall raw` pasan a `passthrough` / `log` (`MBL-OUT`, `MBL-ROUTER`), mensaje `ipv6 yes, mode log)` y el informe dice `would have dropped ...; ipv6 in N, ...`; `mblMode "block"` vuelve a `drop` en las dos familias |
 | `test_14o_disable_ipv6_cleans_up` | Parte de reglas (también una `MBL-OLD:`), entradas y ficheros IPv6 existentes; `mblIpv6 false` al reinstalar: borra reglas, listas y ficheros IPv6 de MBL, IPv4 intacto, mensaje `ipv6 no`, `mbl-update` con `:local ipv6 "no"` y las actualizaciones siguientes no piden la lista IPv6 |
+| `test_14p_install_log_mode` | `mblMode "log"`: mensaje `mode log)`, sin informe de contadores en la primera carga, reglas en modo log, `:local mode "log"`; un ping del router a una entrada de la lista (por una pasarela que no responde a ARP, así no sale de la VM) aparece como `MBL-ROUTER` y en `router-out`; la actualización registra el aviso `log-only mode` (warning) y `would have dropped`; una ejecución de arranque no registra ni aviso ni contadores |
+| `test_14q_reinstall_keeps_log_mode` | Reinstalar con `mblMode ""` conserva `log` |
+| `test_14r_invalid_mode_rejected` | `mblMode "drop"`: `invalid mblMode` antes de cambiar nada (mismas reglas y acciones, lista, `mbl-update`, ninguna petición) |
+| `test_14s_back_to_block` | `mblMode "block"`: reglas `drop`, mensaje `mode block)`, sin aviso y el informe dice `dropped` |
+| `test_14t_drop_counters` | Tras 3 pings a una entrada de la lista, el informe va desde el `mblStatsSince` anterior y da `router-out` ≥ 3; el siguiente da `router-out 0` (contadores puestos a cero) |
+| `test_14u_boot_run_no_counters` | Una ejecución de arranque no registra contadores; sin `mblStatsSince` (tras un reinicio) el informe dice `since boot` |
 | `test_15_final_uninstall` | Siempre el último: instala con IPv6 y desinstala; deja el router limpio en las dos familias |
 
 ### Rendimiento de la v3 (2026-10-21)

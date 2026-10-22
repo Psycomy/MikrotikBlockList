@@ -7,7 +7,16 @@ published list carries it as `script=<version>` in its header.
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-10-22
+
 ### Added
+- Log-only mode: `:global mblMode "log"` before the install. The three drop rules count
+  (`MBL: in`, `passthrough`) or log (`MBL: out` as `MBL-OUT`, `MBL: router-out` as `MBL-ROUTER`)
+  instead of dropping, and each update logs a warning that nothing is blocked. Reinstall with
+  `:global mblMode "block"` to block. The mode is kept on a reinstall, like the variant.
+- Drop counters: each update (not at boot, not the installer's first load) logs
+  `MBL: dropped since <time>: in N, out N, router-out N packets` (`would have dropped` in log mode,
+  plus `; ipv6 ...` with IPv6 on) and resets the counters of those rules.
 - Automatic maintenance issues, each closed again by the next healthy run:
   - `build-health` (daily): failed or empty sources, CDN snapshot fallback, IPv6 withheld,
     stale lists, or a run that did not publish. The check is also a command:

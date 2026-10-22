@@ -35,13 +35,17 @@
 # /import to add them (false removes them); when unset, a reinstall keeps the
 # choice already installed. See step 1.
 :global mblIpv6
+# Mode: "block" (default) drops, "log" only counts and logs what would be
+# dropped (to try the list first). Set :global mblMode "log" before /import;
+# when unset, a reinstall keeps the mode already installed. See step 1.
+:global mblMode
 # Minimum RouterOS version (major.minor). 7.21 is the first release with the
 # per-service built-in CA store (/certificate settings builtin-trust-store,
 # 7.21 changelog). Tested on CHR 7.24.5.
 :local mblMinVersion "7.21"
 # Version of this installer and of the mbl-update it installs (= VERSION file).
 # mbl-update logs a warning when the published list says a newer one exists.
-:local mblScriptVersion "3.4.1"
+:local mblScriptVersion "3.5.0"
 
 # "7.21.3 (stable)" -> 7021 ; "7.19rc2" -> 7019
 :local mblVerNum do={
@@ -96,6 +100,17 @@
   :set mblV6 "no"
   :if ($want6 = "true") do={ :set mblV6 "yes" }
 }
+# Mode: :global mblMode if set, else the one in the installed mbl-update (its
+# ':local mode "<block|log>"' line), else block. Only "block" or "log" is
+# ever used.
+:local mblMd ""
+:local wantM [:tostr $mblMode]
+:if ([:len $wantM] > 0) do={
+  :if ($wantM != "block" && $wantM != "log") do={
+    :error "MBL: invalid mblMode \"$wantM\" (use \"block\" or \"log\"). Nothing was changed."
+  }
+  :set mblMd $wantM
+}
 :local prev [/system script find where name="mbl-update"]
 :if ([:len $prev] > 0) do={
   :local prevSrc [/system script get ($prev->0) source]
@@ -117,9 +132,19 @@
       :if ([:pick $v 0 3] = "no\"") do={ :set mblV6 "no" }
     }
   }
+  :if ($mblMd = "") do={
+    :local key ":local mode \""
+    :local q [:find $prevSrc $key]
+    :if ([:typeof $q] = "num") do={
+      :local v [:pick $prevSrc ($q + [:len $key]) ($q + [:len $key] + 6)]
+      :if ($v = "block\"") do={ :set mblMd "block" }
+      :if ([:pick $v 0 4] = "log\"") do={ :set mblMd "log" }
+    }
+  }
 }
 :if ($mblVar = "") do={ :set mblVar "full" }
 :if ($mblV6 = "") do={ :set mblV6 "no" }
+:if ($mblMd = "") do={ :set mblMd "block" }
 # The router downloads a plain list (one address per line) and validates
 # every line as data; nothing downloaded is ever executed.
 :local mblUrl ($mblBase . "/routeros-" . $mblVar . ".txt")
@@ -226,8 +251,8 @@
 
 # --------------------------------------------------- 5. mbl-update script
 # The body is stored verbatim; @MBL_URL@, @MBL_URL6@, @MBL_VERSION@,
-# @MBL_VARIANT@ and @MBL_IPV6@ are replaced with $mblUrl, $mblUrl6,
-# $mblScriptVersion, $mblVar and $mblV6 below.
+# @MBL_VARIANT@, @MBL_IPV6@ and @MBL_MODE@ are replaced with $mblUrl,
+# $mblUrl6, $mblScriptVersion, $mblVar, $mblV6 and $mblMd below.
 /system script add name=mbl-update policy=ftp,read,write,policy,test \
   dont-require-permissions=no comment="MBL: blocklist updater" source={
 # MikroBlockList v3 updater - installed by install.rsc, do not edit.
@@ -235,6 +260,8 @@
 # line to the inactive list (mbl-a or mbl-b), switch the MBL rules to it,
 # empty the old list.
 # Boot run (:global mblBoot true): same, but from mbl-last.txt, no download.
+# Other runs end by logging the packets the MBL rules dropped (or, in log
+# mode, would have dropped) since the previous report, and reset the counters.
 # With IPv6 on, the IPv6 list then goes the same way into mbl6-a / mbl6-b
 # (files mbl6-*.txt, rules in /ipv6 firewall raw). An IPv6 failure never
 # touches anything IPv4: each family has its own lists, rules and files.
@@ -247,6 +274,8 @@
 :local variant "@MBL_VARIANT@"
 # "yes": also load the IPv6 list
 :local ipv6 "@MBL_IPV6@"
+# "block": the rules drop; "log": they only count and log (set by install.rsc)
+:local mode "@MBL_MODE@"
 # /file read returns at most 32768 bytes per call (RouterOS 7.24)
 :local chunkSize 32768
 # a longer line cannot be an address; it is dropped as one invalid line
@@ -259,6 +288,8 @@
 :global mblInstallRun
 :global mblLastOk
 :global mblLastOk6
+# start of the current counter period ("YYYY-MM-DD HH:MM:SS"); unset after a reboot
+:global mblStatsSince
 # Rename file $1 to $2 (/file set name=), falling back to copy + remove.
 # Run through :parse so a release lacking a command fails at run time,
 # not when the whole script is parsed. Returns true on success.
@@ -740,6 +771,57 @@
       } on-error={ :log warning ("MBL: " . $fl . "update aborted") }
     }
   }
+  # ---- drop counters: packets of the in / out / router-out rules since the
+  # previous report, then reset. Not at boot (the counters restart at zero
+  # with the router) nor on the installer's first load (new rules). Only
+  # numbers read from the rules are logged; errors are ignored so the report
+  # can never fail an update.
+  :if (!$boot && !$owned) do={
+    :do {
+      :local now ([/system clock get date] . " " . [/system clock get time])
+      :local since [:tostr $mblStatsSince]
+      :if ([:len $since] = 0) do={ :set since "boot" }
+      :local c4 ""
+      :local c6 ""
+      :local ri [/ip firewall raw find where comment="MBL: in"]
+      :local ro [/ip firewall raw find where comment="MBL: out"]
+      :local rr [/ip firewall raw find where comment="MBL: router-out"]
+      :if ([:len $ri] > 0 && [:len $ro] > 0 && [:len $rr] > 0) do={
+        :local pIn [/ip firewall raw get ($ri->0) packets]
+        /ip firewall raw reset-counters ($ri->0)
+        :local pOut [/ip firewall raw get ($ro->0) packets]
+        /ip firewall raw reset-counters ($ro->0)
+        :local pRtr [/ip firewall raw get ($rr->0) packets]
+        /ip firewall raw reset-counters ($rr->0)
+        :set c4 ("in $pIn, out $pOut, router-out $pRtr")
+      }
+      :if ($ipv6 = "yes") do={
+        :local ri6 [/ipv6 firewall raw find where comment="MBL: in"]
+        :local ro6 [/ipv6 firewall raw find where comment="MBL: out"]
+        :local rr6 [/ipv6 firewall raw find where comment="MBL: router-out"]
+        :if ([:len $ri6] > 0 && [:len $ro6] > 0 && [:len $rr6] > 0) do={
+          :local pIn [/ipv6 firewall raw get ($ri6->0) packets]
+          /ipv6 firewall raw reset-counters ($ri6->0)
+          :local pOut [/ipv6 firewall raw get ($ro6->0) packets]
+          /ipv6 firewall raw reset-counters ($ro6->0)
+          :local pRtr [/ipv6 firewall raw get ($rr6->0) packets]
+          /ipv6 firewall raw reset-counters ($rr6->0)
+          :set c6 ("; ipv6 in $pIn, out $pOut, router-out $pRtr")
+        }
+      }
+      # without the IPv4 rules (e.g. a reinstall is renaming them) there is
+      # nothing to report; the period goes on
+      :if ($c4 != "") do={
+        :local verb "dropped"
+        :if ($mode = "log") do={ :set verb "would have dropped" }
+        :log info ("MBL: " . $verb . " since " . $since . ": " . $c4 . " packets" . $c6)
+        :set mblStatsSince $now
+      }
+    } on-error={}
+  }
+  :if (!$boot && $mode = "log") do={
+    :log warning "MBL: log-only mode, nothing is blocked (reinstall with :global mblMode \"block\" to block)"
+  }
   # the installer's first load leaves the lock to the installer
   :if (!$owned) do={ :set mblRunning false }
 }
@@ -758,6 +840,7 @@ $mblInject "@MBL_URL6@" $mblUrl6
 $mblInject "@MBL_VERSION@" $mblScriptVersion
 $mblInject "@MBL_VARIANT@" $mblVar
 $mblInject "@MBL_IPV6@" $mblV6
+$mblInject "@MBL_MODE@" $mblMd
 
 # --------------------------------------------------------- 6. schedulers
 # Daily at a random time so routers do not all hit GitHub at once.
@@ -774,6 +857,21 @@ $mblInject "@MBL_IPV6@" $mblV6
 
 # ------------------------------------------------- 7. raw rules (at the top)
 # Drop rules point at $active / $active6 (see step 3); mbl-update switches them later.
+# Log mode changes only the action of the three drop rules (comments and order
+# are the same): in only counts (passthrough: inbound scanners would flood the
+# log), out and router-out log; nothing is dropped.
+:local aIn "drop"
+:local aOut "drop"
+:local logOut "yes"
+:local aRtr "drop"
+:local preRtr ""
+:if ($mblMd = "log") do={
+  :set aIn "passthrough"
+  :set aOut "log"
+  :set logOut "no"
+  :set aRtr "log"
+  :set preRtr "MBL-ROUTER"
+}
 # The anchor is the first raw rule, whatever it is: on a reinstall usually the
 # first MBL-OLD: rule, so the new rules go where the old ones were (at the top
 # unless you moved them) and the user's own rules keep their order below.
@@ -781,20 +879,20 @@ $mblInject "@MBL_IPV6@" $mblV6
 :if ([:len $existing] = 0) do={
   /ip firewall raw add chain=prerouting src-address-list=mbl-allow action=accept comment="MBL: allow-in"
   /ip firewall raw add chain=prerouting dst-address-list=mbl-allow action=accept comment="MBL: allow-out"
-  /ip firewall raw add chain=prerouting in-interface-list=WAN src-address-list=$active action=drop comment="MBL: in"
-  /ip firewall raw add chain=prerouting in-interface-list=LAN dst-address-list=$active action=drop log=yes log-prefix="MBL-OUT" comment="MBL: out"
+  /ip firewall raw add chain=prerouting in-interface-list=WAN src-address-list=$active action=$aIn comment="MBL: in"
+  /ip firewall raw add chain=prerouting in-interface-list=LAN dst-address-list=$active action=$aOut log=$logOut log-prefix="MBL-OUT" comment="MBL: out"
   /ip firewall raw add chain=output dst-address-list=mbl-allow action=accept comment="MBL: allow-router-out"
-  /ip firewall raw add chain=output dst-address-list=$active action=drop comment="MBL: router-out"
+  /ip firewall raw add chain=output dst-address-list=$active action=$aRtr log-prefix=$preRtr comment="MBL: router-out"
 } else={
   # Each rule goes just before the anchor (the rule that was first), so ours
   # keep this order above it.
   :local anchor ($existing->0)
   /ip firewall raw add chain=prerouting src-address-list=mbl-allow action=accept comment="MBL: allow-in" place-before=$anchor
   /ip firewall raw add chain=prerouting dst-address-list=mbl-allow action=accept comment="MBL: allow-out" place-before=$anchor
-  /ip firewall raw add chain=prerouting in-interface-list=WAN src-address-list=$active action=drop comment="MBL: in" place-before=$anchor
-  /ip firewall raw add chain=prerouting in-interface-list=LAN dst-address-list=$active action=drop log=yes log-prefix="MBL-OUT" comment="MBL: out" place-before=$anchor
+  /ip firewall raw add chain=prerouting in-interface-list=WAN src-address-list=$active action=$aIn comment="MBL: in" place-before=$anchor
+  /ip firewall raw add chain=prerouting in-interface-list=LAN dst-address-list=$active action=$aOut log=$logOut log-prefix="MBL-OUT" comment="MBL: out" place-before=$anchor
   /ip firewall raw add chain=output dst-address-list=mbl-allow action=accept comment="MBL: allow-router-out" place-before=$anchor
-  /ip firewall raw add chain=output dst-address-list=$active action=drop comment="MBL: router-out" place-before=$anchor
+  /ip firewall raw add chain=output dst-address-list=$active action=$aRtr log-prefix=$preRtr comment="MBL: router-out" place-before=$anchor
 }
 # The same 6 rules in /ipv6 firewall raw, with IPv6 on only.
 :if ($mblV6 = "yes") do={
@@ -802,18 +900,18 @@ $mblInject "@MBL_IPV6@" $mblV6
   :if ([:len $existing6] = 0) do={
     /ipv6 firewall raw add chain=prerouting src-address-list=mbl6-allow action=accept comment="MBL: allow-in"
     /ipv6 firewall raw add chain=prerouting dst-address-list=mbl6-allow action=accept comment="MBL: allow-out"
-    /ipv6 firewall raw add chain=prerouting in-interface-list=WAN src-address-list=$active6 action=drop comment="MBL: in"
-    /ipv6 firewall raw add chain=prerouting in-interface-list=LAN dst-address-list=$active6 action=drop log=yes log-prefix="MBL-OUT" comment="MBL: out"
+    /ipv6 firewall raw add chain=prerouting in-interface-list=WAN src-address-list=$active6 action=$aIn comment="MBL: in"
+    /ipv6 firewall raw add chain=prerouting in-interface-list=LAN dst-address-list=$active6 action=$aOut log=$logOut log-prefix="MBL-OUT" comment="MBL: out"
     /ipv6 firewall raw add chain=output dst-address-list=mbl6-allow action=accept comment="MBL: allow-router-out"
-    /ipv6 firewall raw add chain=output dst-address-list=$active6 action=drop comment="MBL: router-out"
+    /ipv6 firewall raw add chain=output dst-address-list=$active6 action=$aRtr log-prefix=$preRtr comment="MBL: router-out"
   } else={
     :local anchor6 ($existing6->0)
     /ipv6 firewall raw add chain=prerouting src-address-list=mbl6-allow action=accept comment="MBL: allow-in" place-before=$anchor6
     /ipv6 firewall raw add chain=prerouting dst-address-list=mbl6-allow action=accept comment="MBL: allow-out" place-before=$anchor6
-    /ipv6 firewall raw add chain=prerouting in-interface-list=WAN src-address-list=$active6 action=drop comment="MBL: in" place-before=$anchor6
-    /ipv6 firewall raw add chain=prerouting in-interface-list=LAN dst-address-list=$active6 action=drop log=yes log-prefix="MBL-OUT" comment="MBL: out" place-before=$anchor6
+    /ipv6 firewall raw add chain=prerouting in-interface-list=WAN src-address-list=$active6 action=$aIn comment="MBL: in" place-before=$anchor6
+    /ipv6 firewall raw add chain=prerouting in-interface-list=LAN dst-address-list=$active6 action=$aOut log=$logOut log-prefix="MBL-OUT" comment="MBL: out" place-before=$anchor6
     /ipv6 firewall raw add chain=output dst-address-list=mbl6-allow action=accept comment="MBL: allow-router-out" place-before=$anchor6
-    /ipv6 firewall raw add chain=output dst-address-list=$active6 action=drop comment="MBL: router-out" place-before=$anchor6
+    /ipv6 firewall raw add chain=output dst-address-list=$active6 action=$aRtr log-prefix=$preRtr comment="MBL: router-out" place-before=$anchor6
   }
 }
 # The new rules are in place: only now do the old ones go.
@@ -830,6 +928,9 @@ $mblInject "@MBL_IPV6@" $mblV6
 # mbl-update run to go ahead despite the lock (it clears the flag at once and
 # leaves the lock alone). The installer releases the lock afterwards, in
 # every case.
+# The new rules count from zero: the next mbl-update reports from now on.
+:global mblStatsSince
+:set mblStatsSince ([/system clock get date] . " " . [/system clock get time])
 :global mblInstallRun
 :global mblLastOk
 :global mblLastOk6
@@ -844,10 +945,10 @@ $mblInject "@MBL_IPV6@" $mblV6
   # IPv6 is best effort: IPv4 is installed even when the first IPv6 load failed.
   :local note ""
   :if (($mblV6 = "yes") && ($mblLastOk6 != true)) do={ :set note " - first ipv6 load failed, see log" }
-  :put ("MBL: installed (script $mblScriptVersion, variant $mblVar, ipv6 " . $mblV6 . $note . ")")
-  :log info ("MBL: installed (script $mblScriptVersion, variant $mblVar, ipv6 " . $mblV6 . $note . ")")
+  :put ("MBL: installed (script $mblScriptVersion, variant $mblVar, ipv6 $mblV6, mode " . $mblMd . $note . ")")
+  :log info ("MBL: installed (script $mblScriptVersion, variant $mblVar, ipv6 $mblV6, mode " . $mblMd . $note . ")")
 } else={
-  :put "MBL: WARNING installed (script $mblScriptVersion, variant $mblVar, ipv6 $mblV6), but the first load failed or was skipped. See /log print where message~\"MBL\""
-  :log warning "MBL: installed (script $mblScriptVersion, variant $mblVar, ipv6 $mblV6), but the first load failed or was skipped"
+  :put "MBL: WARNING installed (script $mblScriptVersion, variant $mblVar, ipv6 $mblV6, mode $mblMd), but the first load failed or was skipped. See /log print where message~\"MBL\""
+  :log warning "MBL: installed (script $mblScriptVersion, variant $mblVar, ipv6 $mblV6, mode $mblMd), but the first load failed or was skipped"
 }
 }

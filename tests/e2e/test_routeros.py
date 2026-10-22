@@ -19,7 +19,7 @@ MBL_E2E_ARTIFACTS=<dir> receives console.log and qemu.log (written there while
 the VM runs, so they survive a killed run) and router-log.txt (the router's
 /log print, when the run ends), for CI failure artifacts.
 
-The cases share one router and run in order (test_01 ... test_15).
+The cases share one router and run in name order (test_01 ... test_15).
 """
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ import time
 import unittest
 from contextlib import suppress
 from datetime import datetime, timezone
-from ipaddress import IPv4Address, IPv4Network, IPv6Network
+from ipaddress import IPv4Address, IPv4Interface, IPv4Network, IPv6Network
 from pathlib import Path
 
 from mbl.render import write_outputs
@@ -75,6 +75,24 @@ MALICIOUS = [
     "",
     "9" * 100_000,  # over-long line: spans several 32 KiB chunks
 ]
+# (action, log, log-prefix) of the three drop rules in each :global mblMode
+DROP_RULES = ("MBL: in", "MBL: out", "MBL: router-out")
+BLOCK_ACTIONS = {"MBL: in": ("drop", "false", ""),
+                 "MBL: out": ("drop", "true", "MBL-OUT"),
+                 "MBL: router-out": ("drop", "false", "")}
+LOG_ACTIONS = {"MBL: in": ("passthrough", "false", ""),
+               "MBL: out": ("log", "false", "MBL-OUT"),
+               "MBL: router-out": ("log", "false", "MBL-ROUTER")}
+# mbl-update's counter report; groups: verb, since, in, out, router-out, then
+# the IPv6 in, out, router-out (None with IPv6 off)
+COUNTER_RE = re.compile(
+    r"MBL: (dropped|would have dropped) since (boot|\d{4}-\d\d-\d\d \d\d:\d\d:\d\d): "
+    r"in (\d+), out (\d+), router-out (\d+) packets"
+    r"(?:; ipv6 in (\d+), out (\d+), router-out (\d+))?$")
+STAMP_RE = re.compile(r"^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$")
+REMINDER = ('MBL: log-only mode, nothing is blocked (reinstall with :global mblMode "block" '
+            "to block)")
+PINGS = 3
 
 
 def _older(version: str) -> str:
@@ -422,7 +440,7 @@ class RouterOsTest(unittest.TestCase):
         # every line is loaded, including those cut between two /file read chunks
         self.assertEqual(self.count(self.active_list()), LIST_SIZE)
         log = self.log()
-        self.assertIn(f"MBL: installed (script {self.installed_version}, variant full, ipv6 no)", log)
+        self.assertIn(f"MBL: installed (script {self.installed_version}, variant full, ipv6 no, mode block)", log)
         warning = f"MBL: using test URL base {self.base}"
         self.assertTrue(any(warning in ln and "warning" in ln.split(" ", 1)[0]
                             for ln in log.splitlines()), log)
@@ -908,7 +926,7 @@ class RouterOsTest(unittest.TestCase):
         out = self.install_variant("lite")
         self.assertIn("/routeros-lite.txt", self.server.requests)
         self.assertEqual(self.count(self.active_list()), 2000)
-        self.assertIn(f"MBL: installed (script {self.installed_version}, variant lite, ipv6 no)",
+        self.assertIn(f"MBL: installed (script {self.installed_version}, variant lite, ipv6 no, mode block)",
                       self.log_after(token))
         self.assertIn("variant lite", out)
         self.assertIn("routeros-lite.txt", self.update_source())
@@ -990,7 +1008,7 @@ class RouterOsTest(unittest.TestCase):
         self.assertIn(':local ipv6 "no"', self.update_source())
         self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
         self.assertEqual(self.count(self.active_list()), LIST_SIZE)
-        self.assertIn(f"MBL: installed (script {self.installed_version}, variant full, ipv6 no)",
+        self.assertIn(f"MBL: installed (script {self.installed_version}, variant full, ipv6 no, mode block)",
                       self.log_after(token))
         self.assertIn("ipv6 no", out)
         # an update with IPv6 off never asks for the IPv6 list either
@@ -1009,7 +1027,7 @@ class RouterOsTest(unittest.TestCase):
         finally:
             self.server.fail_paths = set()
         note = (f"MBL: installed (script {self.installed_version}, variant full, "
-                "ipv6 yes - first ipv6 load failed, see log)")
+                "ipv6 yes, mode block - first ipv6 load failed, see log)")
         self.assertIn(note, out)
         self.assertIn(note, self.log_after(token))
         self.assertEqual(self.count(self.active_list()), LIST_SIZE)
@@ -1025,9 +1043,9 @@ class RouterOsTest(unittest.TestCase):
         self.assertEqual(self.count6(active6), LIST6_SIZE)
         log = self.log_after(token)
         self.assertIn(f"loaded {LIST6_SIZE} ipv6 entries into {active6}", log)
-        self.assertIn(f"MBL: installed (script {self.installed_version}, variant full, ipv6 yes)",
+        self.assertIn(f"MBL: installed (script {self.installed_version}, variant full, ipv6 yes, mode block)",
                       log)
-        self.assertIn("ipv6 yes)", out)
+        self.assertIn("ipv6 yes, mode block)", out)
         self.assertNotIn("first ipv6 load failed", out)
         self.assertEqual(self.count(self.active_list()), LIST_SIZE)
         self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
@@ -1092,6 +1110,90 @@ class RouterOsTest(unittest.TestCase):
                 finally:
                     self.set_update_path(f"/{name}", "/routeros6-full.txt")
 
+    def install_mode(self, mode: str, ipv6: str = "") -> str:
+        """Install with :global mblMode `mode` ('' = keep), variant full, and
+        :global mblIpv6 ('true', 'false' or '' = keep)."""
+        self.chr.upload(ROUTEROS / "install.rsc", "install.rsc")
+        value = ipv6 if ipv6 in ("true", "false") else '""'
+        return self.chr.run(
+            f':global mblUrlBase "{self.base}"; :global mblVariant "full"; '
+            f':global mblIpv6 {value}; :global mblMode "{mode}"; /import install.rsc',
+            timeout=600)
+
+    def drop_rule_actions(self, path: str = "/ip firewall raw") -> dict[str, tuple[str, ...]]:
+        """(action, log, log-prefix) of each drop rule, which must exist once."""
+        out = {}
+        for rule in DROP_RULES:
+            self.assertEqual(self.num(path, f'comment="{rule}"'), 1, f"{path} {rule}")
+            r = f'([{path} find where comment="{rule}"]->0)'
+            action, log, prefix = (self.put(f"[{path} get {r} {prop}]")
+                                   for prop in ("action", "log", "log-prefix"))
+            # a rule added without log= reads back an empty log
+            out[rule] = (action, log or "false", prefix)
+        return out
+
+    def counter_lines(self, log: str) -> list[re.Match]:
+        return [m for ln in log.splitlines() if (m := COUNTER_RE.search(ln))]
+
+    def reminders(self, log: str) -> list[str]:
+        return [ln for ln in log.splitlines() if REMINDER in ln]
+
+    def stats_since(self) -> str:
+        return self.chr.run(":global mblStatsSince; :put $mblStatsSince").strip()
+
+    def ping_listed(self) -> None:
+        """PINGS pings from the router to the first entry of the active list (router-out).
+
+        On the QEMU CHR the address is routed via a gateway that does not answer
+        ARP (slirp only answers for its own addresses), so a ping that passes the
+        rule (log mode) still never leaves the VM; the raw output chain sees it
+        before the neighbour lookup."""
+        entry = self.put(f'[/ip firewall address-list get ([find where list="{self.active_list()}"]->0) address]')
+        addr = entry.split("/")[0]
+        route = None
+        if not os.environ.get("MBL_E2E_SSH"):
+            own = IPv4Interface(self.put('[/ip address get ([find where interface="ether1"]->0) address]'))
+            route = own.network.network_address + 99
+            self.assertNotEqual(route, own.ip)
+            self.chr.run(f"/ip route add dst-address={addr}/32 gateway={route} comment={DNS_COMMENT}")
+        try:
+            self.chr.run(f":do {{/ping {addr} count={PINGS} interval=200ms}} on-error={{}}", timeout=60)
+        finally:
+            if route is not None:
+                self.chr.run(f'/ip route remove [find where comment="{DNS_COMMENT}"]')
+
+    def test_14nb_ipv6_log_mode(self):
+        token = self.mark()
+        out = self.install_mode("log")
+        msg = f"MBL: installed (script {self.installed_version}, variant full, ipv6 yes, mode log)"
+        self.assertIn(msg, out)
+        self.assertIn(msg, self.log_after(token))
+        self.assertEqual(self.drop_rule_actions(), LOG_ACTIONS)
+        self.assertEqual(self.drop_rule_actions("/ipv6 firewall raw"), LOG_ACTIONS)
+        self.assertEqual(self.num("/ipv6 firewall raw", 'comment~"^MBL:"'), 6)
+        self.assertEqual(self.count6(self.active_list6()), LIST6_SIZE)
+        token = self.mark()
+        self.update()
+        log = self.log_after(token)
+        lines = self.counter_lines(log)
+        self.assertEqual(len(lines), 1, log)
+        self.assertEqual(lines[0].group(1), "would have dropped")
+        self.assertIsNotNone(lines[0].group(6), log)  # the IPv6 counters
+        # back to block, IPv6 still on (test_14o turns it off)
+        out = self.install_mode("block")
+        self.assertIn("ipv6 yes, mode block)", out)
+        self.assertEqual(self.drop_rule_actions(), BLOCK_ACTIONS)
+        self.assertEqual(self.drop_rule_actions("/ipv6 firewall raw"), BLOCK_ACTIONS)
+        self.assertEqual(self.count6(self.active_list6()), LIST6_SIZE)
+        token = self.mark()
+        self.update()
+        log = self.log_after(token)
+        lines = self.counter_lines(log)
+        self.assertEqual(len(lines), 1, log)
+        self.assertEqual(lines[0].group(1), "dropped")
+        self.assertIsNotNone(lines[0].group(6), log)
+        self.assertEqual(self.reminders(log), [])
+
     def test_14o_disable_ipv6_cleans_up(self):
         # an MBL-OLD: IPv6 rule, as an aborted reinstall leaves, goes too
         self.chr.run('/ipv6 firewall raw add chain=prerouting src-address-list=mbl6-a '
@@ -1110,12 +1212,129 @@ class RouterOsTest(unittest.TestCase):
         self.assertEqual(self.num("/ipv6 firewall raw", 'comment~"^MBL-OLD:"'), 0)
         self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
         self.assertEqual(self.count(self.active_list()), LIST_SIZE)
-        self.assertIn(f"MBL: installed (script {self.installed_version}, variant full, ipv6 no)",
+        self.assertIn(f"MBL: installed (script {self.installed_version}, variant full, ipv6 no, mode block)",
                       self.log_after(token))
         self.assertIn("ipv6 no", out)
         source = self.update_source()
         self.assertIn("routeros-full.txt", source)
         self.assertIn(':local ipv6 "no"', source)
+
+    def test_14p_install_log_mode(self):
+        token = self.mark()
+        out = self.install_mode("log")
+        msg = f"MBL: installed (script {self.installed_version}, variant full, ipv6 no, mode log)"
+        self.assertIn(msg, out)
+        log = self.log_after(token)
+        self.assertIn(msg, log)
+        self.assertEqual(self.counter_lines(log), [], log)  # not on the installer's first load
+        self.assertEqual(self.drop_rule_actions(), LOG_ACTIONS)
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
+        self.assertEqual(self.mbl6_objects(), {"rules": 0, "entries": 0, "files": 0})
+        self.assertEqual(self.count(self.active_list()), LIST_SIZE)
+        self.assertIn(':local mode "log"', self.update_source())
+        self.assertTrue(STAMP_RE.match(self.stats_since()), self.stats_since())
+        # the router's own traffic to a listed host is counted and logged, not dropped
+        if not os.environ.get("MBL_E2E_SSH"):  # an existing router's ping would leave it
+            token = self.mark()
+            self.ping_listed()
+            self.assertIn("MBL-ROUTER", self.log_after(token))
+        token = self.mark()
+        self.update()
+        log = self.log_after(token)
+        self.assertIn("MBL: loaded", log)
+        reminders = self.reminders(log)
+        self.assertEqual(len(reminders), 1, log)
+        self.assertIn("warning", reminders[0].split(" ", 1)[0])
+        lines = self.counter_lines(log)
+        self.assertEqual(len(lines), 1, log)
+        self.assertEqual(lines[0].group(1), "would have dropped")
+        self.assertIsNone(lines[0].group(6))
+        if not os.environ.get("MBL_E2E_SSH"):
+            self.assertGreaterEqual(int(lines[0].group(5)), PINGS, log)
+        # a boot run: no reminder, no counters
+        token = self.mark()
+        self.update(boot=True)
+        log = self.log_after(token)
+        self.assertIn("MBL: loaded", log)
+        self.assertEqual(self.reminders(log), [])
+        self.assertEqual(self.counter_lines(log), [])
+
+    def test_14q_reinstall_keeps_log_mode(self):
+        out = self.install_mode("")
+        self.assertIn("ipv6 no, mode log)", out)
+        self.assertEqual(self.drop_rule_actions(), LOG_ACTIONS)
+        self.assertIn(':local mode "log"', self.update_source())
+        self.assertEqual(self.count(self.active_list()), LIST_SIZE)
+
+    def test_14r_invalid_mode_rejected(self):
+        before = (self.drop_rule_actions(), self.active_list(), self.count(self.active_list()),
+                  self.update_source())
+        self.server.requests.clear()
+        try:
+            out = self.install_mode("drop")
+        except ChrError as e:
+            out = str(e)
+        self.assertIn('MBL: invalid mblMode "drop" (use "block" or "log").', out)
+        self.assertIn("Nothing was changed.", out)
+        self.assertEqual(self.server.requests, [])
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
+        self.assertEqual((self.drop_rule_actions(), self.active_list(),
+                          self.count(self.active_list()), self.update_source()), before)
+
+    def test_14s_back_to_block(self):
+        token = self.mark()
+        out = self.install_mode("block")
+        msg = f"MBL: installed (script {self.installed_version}, variant full, ipv6 no, mode block)"
+        self.assertIn(msg, out)
+        self.assertIn(msg, self.log_after(token))
+        self.assertEqual(self.drop_rule_actions(), BLOCK_ACTIONS)
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
+        self.assertIn(':local mode "block"', self.update_source())
+        self.assertEqual(self.count(self.active_list()), LIST_SIZE)
+        token = self.mark()
+        self.update()
+        log = self.log_after(token)
+        self.assertEqual(self.reminders(log), [])
+        lines = self.counter_lines(log)
+        self.assertEqual(len(lines), 1, log)
+        self.assertEqual(lines[0].group(1), "dropped")
+
+    def test_14t_drop_counters(self):
+        self.update()  # a fresh counter period
+        since = self.stats_since()
+        self.assertTrue(STAMP_RE.match(since), since)
+        self.ping_listed()
+        token = self.mark()
+        self.update()
+        log = self.log_after(token)
+        lines = self.counter_lines(log)
+        self.assertEqual(len(lines), 1, log)
+        self.assertEqual(lines[0].group(1), "dropped")
+        self.assertEqual(lines[0].group(2), since)
+        self.assertGreaterEqual(int(lines[0].group(5)), PINGS, log)
+        # the report reset the counters
+        token = self.mark()
+        self.update()
+        log = self.log_after(token)
+        lines = self.counter_lines(log)
+        self.assertEqual(len(lines), 1, log)
+        self.assertEqual(lines[0].group(5), "0", log)
+        self.assertEqual(self.put('[/ip firewall raw get ([find where comment="MBL: router-out"]->0) packets]'), "0")
+
+    def test_14u_boot_run_no_counters(self):
+        token = self.mark()
+        self.update(boot=True)
+        log = self.log_after(token)
+        self.assertIn("MBL: loaded", log)
+        self.assertEqual(self.counter_lines(log), [], log)
+        # after a reboot the period start is unset: the next report says "since boot"
+        self.chr.run('/system script environment remove [find where name="mblStatsSince"]')
+        token = self.mark()
+        self.update()
+        lines = self.counter_lines(self.log_after(token))
+        self.assertEqual(len(lines), 1)
+        self.assertEqual(lines[0].group(2), "boot")
+        self.assertTrue(STAMP_RE.match(self.stats_since()), self.stats_since())
 
     def test_07j_leaked_install_flag_does_not_stick_lock(self):
         # an installer killed at the wrong instant can leave mblInstallRun=true behind;
