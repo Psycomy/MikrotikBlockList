@@ -134,6 +134,38 @@ class FetchTests(unittest.TestCase):
         self.assertEqual(out.getvalue(), "")
         self.assertIn("warning", err.getvalue())
 
+    def test_unwritable_cache_returns_none_and_cli_exits_zero(self):
+        blocker = self.tmp / "file"
+        blocker.write_text("x")
+        cache = blocker / "sub"  # cannot be created under a regular file
+        self.assertIsNone(fetch_dbip(cache, date(2026, 10, 22), fetcher=lambda u: gz()))
+        import mbl.geo
+        orig = mbl.geo._download
+        mbl.geo._download = lambda u: gz()
+        self.addCleanup(setattr, mbl.geo, "_download", orig)
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = main(["dbip-fetch", "--cache", str(cache)])
+        self.assertEqual((code, out.getvalue()), (0, ""))
+
+    def test_cli_catches_unexpected_exception(self):
+        import mbl.__main__ as m
+        orig = m.fetch_dbip
+        m.fetch_dbip = lambda *a, **k: 1 / 0
+        self.addCleanup(setattr, m, "fetch_dbip", orig)
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = main(["dbip-fetch", "--cache", str(self.tmp)])
+        self.assertEqual((code, out.getvalue()), (0, ""))
+        self.assertIn("warning", err.getvalue())
+
+    def test_corrupt_cache_is_refetched(self):
+        cached = self.tmp / "dbip-country-lite-2026-10.csv.gz"
+        cached.write_bytes(b"garbage")
+        got = fetch_dbip(self.tmp, date(2026, 10, 22), fetcher=lambda u: gz())
+        self.assertEqual(got, cached)
+        self.assertEqual(gzip.decompress(cached.read_bytes()), b"1.0.0.0,1.0.0.255,AU\n")
+
     def test_cli_dbip_fetch_prints_only_path(self):
         import mbl.geo
         orig = mbl.geo._download

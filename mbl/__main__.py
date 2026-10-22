@@ -31,7 +31,11 @@ def main(argv: list[str] | None = None) -> int:
     d.add_argument("--cache", type=Path, required=True)
     args = parser.parse_args(argv)
     if args.command == "dbip-fetch":
-        found = fetch_dbip(args.cache, datetime.now(timezone.utc).date())
+        try:
+            found = fetch_dbip(args.cache, datetime.now(timezone.utc).date())
+        except Exception as exc:  # a DB-IP problem must never fail the workflow
+            print(f"warning: DB-IP fetch failed: {exc}", file=sys.stderr)
+            found = None
         if found is None:
             print("warning: no DB-IP country file available", file=sys.stderr)
         else:

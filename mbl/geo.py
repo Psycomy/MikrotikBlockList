@@ -81,29 +81,43 @@ def _previous_month(day: date) -> date:
     return date(day.year - 1, 12, 1) if day.month == 1 else date(day.year, day.month - 1, 1)
 
 
+def _valid_gzip(body: bytes) -> bool:
+    if body[:2] != b"\x1f\x8b":
+        return False
+    try:
+        gzip.decompress(body)  # also rejects truncated data
+    except (OSError, EOFError, ValueError):
+        return False
+    return True
+
+
 def fetch_dbip(cache_dir: Path, today: date, fetcher=None) -> Path | None:
-    """Return this month's file (cached or downloaded), else last month's, else None."""
+    """Return this month's file (cached or downloaded), else last month's, else None.
+
+    Never raises: network, format and filesystem problems warn on stderr and give None.
+    """
     cache_dir = Path(cache_dir)
     fetcher = fetcher or _download
     for day in (today, _previous_month(today)):
         name = f"dbip-country-lite-{_month(day)}.csv.gz"
         target = cache_dir / name
-        if target.exists():
-            return target
         try:
+            if target.exists():
+                if _valid_gzip(target.read_bytes()):
+                    return target
+                print(f"warning: DB-IP cached {name} is corrupt, fetching again", file=sys.stderr)
             body = fetcher(URL.format(month=_month(day)))
-            if body[:2] != b"\x1f\x8b":
+            if not _valid_gzip(body):
                 raise ValueError("not a gzip file")
-            gzip.decompress(body)  # also rejects truncated downloads
-        except Exception as exc:  # network, HTTP, or format problems all mean "try next"
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            tmp = target.with_suffix(".tmp")
+            tmp.write_bytes(body)
+            tmp.replace(target)
+            for other in cache_dir.glob("dbip-country-lite-*.csv.gz"):
+                if other != target:
+                    other.unlink()
+        except Exception as exc:  # network, HTTP, format or filesystem: try the next month
             print(f"warning: DB-IP {_month(day)}: {exc}", file=sys.stderr)
             continue
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        tmp = target.with_suffix(".tmp")
-        tmp.write_bytes(body)
-        tmp.replace(target)
-        for other in cache_dir.glob("dbip-country-lite-*.csv.gz"):
-            if other != target:
-                other.unlink()
         return target
     return None
