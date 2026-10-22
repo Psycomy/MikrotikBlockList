@@ -9,7 +9,7 @@ published list carries it as `script=<version>` in its header.
 
 ### Fixed
 - Lock hardening in the stored `mbl-update` script: a run now counts as the installer's own only if
-  `mblInstallRun` is set and the lock (`mblRunning`) is actually held. Before, a leaked
+  `mblInstallRun` is set and the lock (`mblRunning`) appears held (best-effort: there is no lock-owner token). Before, a leaked
   `mblInstallRun` flag (installer killed at the wrong instant) made a later scheduler run take the
   lock and never release it. Reinstall to pick it up.
 
