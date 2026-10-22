@@ -45,6 +45,18 @@ jobs:
         with:
           python-version: "3.12"
 
+      # DB-IP Lite country data for lookup.json, refreshed monthly. The fetch
+      # never fails the job: without a file the build just omits countries.
+      - name: Month for DB-IP cache key
+        id: month
+        run: echo "month=$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: .dbip
+          key: dbip-${{ steps.month.outputs.month }}
+      - name: Fetch DB-IP
+        run: echo "DBIP=$(python -m mbl dbip-fetch --cache .dbip)" >> "$GITHUB_ENV"
+
       # Exit code 1 (safety checks failed) fails the step and therefore the
       # job, so nothing is published. allow_growth is only set by a manual
       # run (empty on schedule and push) and skips only the 2x growth check.
@@ -60,6 +72,7 @@ jobs:
             --allowlist allowlist.txt \
             --out dist \
             --previous-stats "$PREVIOUS_STATS" \
+            ${DBIP:+--dbip "$DBIP"} \
             "${extra[@]}"
 
       # The lists branch is orphan and overwritten with a single commit.
