@@ -5,6 +5,34 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/). The version in use is in [`VERSION`](VERSION), and the
 published list carries it as `script=<version>` in its header.
 
+## [3.3.1] - 2026-10-21
+
+### Added
+- Automatic CDN allowlist (`mbl/cdn.py`): Cloudflare, Fastly and CloudFront ranges are downloaded
+  on every build and subtracted from the lists, with fallback to `allowlist-cdn.snapshot.txt`
+  (refreshed by hand with `python -m mbl cdn-snapshot --out allowlist-cdn.snapshot.txt`, via PR).
+  Providers are rejected when unreadable, with fewer than 5 IPv4 prefixes, or too wide. A snapshot
+  block older than 90 days is used with a louder warning.
+- A 10 % allowlist cap measured two ways: addresses removed and entries touched (entries overlapping
+  any allowlist range). Either one over 10 % fails the build for IPv4 `full` and withholds IPv6; the
+  error gives both. `stats.json` gains `cdn_allowlist` (per provider) with `cdn_allowlist.cap`
+  (both measures per family, in percent).
+- Issue forms (false positive, bug report) and `docs/security.md` (threat model, GitHub hardening
+  checklist, private vulnerability reporting).
+- README: diagram with both families and variants, CDN allowlist section, links to the new docs.
+
+### Changed
+- `allowlist.txt` keeps only GitHub and public DNS; Cloudflare ranges now come from the automatic list.
+- Reinstall has no gap: existing `MBL:` rules are renamed `MBL-OLD:`, the new ones are created, and
+  only then are the old ones removed; an aborted install keeps protecting, and the next install or
+  uninstall cleans up `MBL-OLD:` (it also finds the active list through `MBL-OLD: MBL: in`).
+- Reinstall and update no longer race: the installer refuses to start while `mbl-update` holds its
+  lock (`mblRunning`, nothing changed); it takes the lock in one check-and-set right before its first
+  change and holds it through its own first load, releasing it on any error and at the end. `mbl-update` skips a family without its `MBL: in` rule, and drops a
+  load whose `MBL: in` rule changed meanwhile (the active list is kept).
+- CI and end-to-end hardening: the manual workflow version input is validated strictly, and the
+  e2e cleanup also removes `MBLTEST` static DNS entries.
+
 ## [3.3.0] - 2026-10-21
 
 ### Added

@@ -37,14 +37,20 @@
 ```mermaid
 flowchart LR
     S["Public threat feeds<br/>(attack + C2)"] -->|"download, parse,<br/>filter, aggregate"| A["GitHub Action<br/>daily 04:17 UTC"]
-    A -->|"safety checks pass"| L[("lists branch<br/>routeros-full.txt")]
-    L -->|"HTTPS fetch, once a day<br/>at a random time"| R["MikroTik RouterOS v7<br/>raw firewall drop"]
+    C["CDN ranges<br/>(Cloudflare, Fastly, CloudFront)"] -->|"subtracted"| A
+    A -->|"safety checks pass"| L[("lists branch")]
+    L --> V4["IPv4: routeros-full / -lite"]
+    L --> V6["IPv6 (optional): routeros6-full / -lite"]
+    V4 -->|"HTTPS fetch, once a day<br/>at a random time"| R["MikroTik RouterOS v7<br/>raw firewall drop"]
+    V6 -.->|"only if IPv6 is on"| R
 ```
+
+Two families (IPv4, optional IPv6) times two variants (`full`, `lite`).
 
 1. Every day a GitHub Action downloads the [sources](#sources-and-licenses), drops private,
    reserved, CGNAT and other non-global ranges (and anything broader than a /8), subtracts the networks in the
-   repository [`allowlist.txt`](allowlist.txt) (GitHub's download range, the big public DNS
-   resolvers and Cloudflare's shared CDN ranges) and merges overlapping networks.
+   repository [`allowlist.txt`](allowlist.txt) (GitHub's download range and the big public DNS
+   resolvers) plus the [automatic CDN allowlist](#automatic-cdn-allowlist), and merges overlapping networks.
 2. Safety checks refuse to publish a broken list: between 5,000 and 150,000 entries (`full`; the
    `lite` variant: 1,000 to 20,000), no drop of
    more than 50% and no growth of more than 2x from the previous list, and the required source
@@ -80,7 +86,7 @@ Paste this into the RouterOS terminal (Winbox, WebFig or SSH):
 /tool fetch url="https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/main/routeros/install.rsc" check-certificate=yes; /import install.rsc
 ```
 
-It prints `MBL: installed (script 3.3.0, variant full, ipv6 no)` when the first list is loaded (about 20 seconds). The installer is
+It prints `MBL: installed (script 3.3.1, variant full, ipv6 no)` when the first list is loaded (about 20 seconds). The installer is
 idempotent: run it again at any time to upgrade or repair; nothing is duplicated and your
 allowlist is kept.
 
@@ -88,8 +94,8 @@ allowlist is kept.
 
 | Variant | Entries (2026-10-21) | Sources | For |
 |---|---|---|---|
-| `full` (default) | 38,919 | all enabled sources | Routers with enough RAM: attackers, scanners and C2 |
-| `lite` | 4,299 | Spamhaus DROP (and DROPv6 with IPv6 on), DShield, Emerging Threats compromised, ThreatFox, ThreatCluster (the `lite` column of [Sources](#sources-and-licenses)) | Little RAM, or you only want C2 and the most serious attack ranges |
+| `full` (default) | 38,967 | all enabled sources | Routers with enough RAM: attackers, scanners and C2 |
+| `lite` | 4,304 | Spamhaus DROP (and DROPv6 with IPv6 on), DShield, Emerging Threats compromised, ThreatFox, ThreatCluster (the `lite` column of [Sources](#sources-and-licenses)) | Little RAM, or you only want C2 and the most serious attack ranges |
 
 To install `lite`, put `:global mblVariant "lite"; ` in front of the one-liner:
 
@@ -103,7 +109,7 @@ To install `lite`, put `:global mblVariant "lite"; ` in front of the one-liner:
 - The global lives until the router reboots, so if you reinstall in the same session, set it
   explicitly (`"full"`, `"lite"`, or `""` to keep what is installed).
 - Any value other than `full` or `lite` stops the installer before it changes anything.
-- The final message tells you which one is installed: `MBL: installed (script 3.3.0, variant lite, ipv6 no)`.
+- The final message tells you which one is installed: `MBL: installed (script 3.3.1, variant lite, ipv6 no)`.
 - A downloaded list whose header says another variant is rejected (`bad header`).
 
 ### Optional IPv6
@@ -124,7 +130,7 @@ the one-liner (it combines with `:global mblVariant "lite"; `):
 - Any value other than `true` or `false` stops the installer before it changes anything.
 - The global lives until the router reboots, so set it explicitly (`true`, `false`, or `""` to keep
   what is installed) when you reinstall in the same session.
-- The final message tells you the state: `MBL: installed (script 3.3.0, variant full, ipv6 yes)`.
+- The final message tells you the state: `MBL: installed (script 3.3.1, variant full, ipv6 yes)`.
 - Add your own IPv6 exceptions the same way as for IPv4:
   `/ipv6 firewall address-list add list=mbl6-allow address=2001:db8::/32 comment="my office"`.
 - **Best effort:** IPv6 never blocks IPv4. If the IPv6 list fails its checks on the build, no IPv6
@@ -133,11 +139,11 @@ the one-liner (it combines with `:global mblVariant "lite"; `):
   touches the IPv4 lists or rules.
 
 IPv6 sources today (2026-10-21), from the [Sources](#sources-and-licenses) table: Spamhaus DROPv6
-(91 networks), blocklist.de (about 523), Turris Sentinel (49) and ThreatCluster (1). The real
-build gives **648** IPv6 entries in `full` and **86** in `lite` (Spamhaus DROPv6 and ThreatCluster).
+(91 networks), blocklist.de (about 512), Turris Sentinel (49) and ThreatCluster (1). The real
+build gives **637** IPv6 entries in `full` and **86** in `lite` (Spamhaus DROPv6 and ThreatCluster).
 The generator drops non-global IPv6 (ULA, link-local, documentation, multicast, IPv4-mapped, NAT64,
 6to4, Teredo), anything broader than a /19, and the IPv6 part of [`allowlist.txt`](allowlist.txt)
-(Cloudflare, GitHub's download range, public DNS resolvers). Limits: `full` 50 to 20,000 entries,
+(GitHub's download range, public DNS resolvers) plus the automatic CDN ranges. Limits: `full` 50 to 20,000 entries,
 `lite` 20 to 5,000, with the same 50 % drop and 2x growth checks. On the router a line must be an
 IPv6 address or a CIDR with a prefix from 19 to 128, and a file needs at least 200 bytes and 50
 (`full`) or 20 (`lite`) entries. The binding rule for a small list is that every listed entry
@@ -226,7 +232,7 @@ use that comment for your own entries.
 
 ## Updates
 
-When the router logs a warning like `MBL: script 3.3.0 available (installed 3.2.0) - reinstall: ...`,
+When the router logs a warning like `MBL: script 3.3.1 available (installed 3.3.0) - reinstall: ...`,
 a newer version of the router script has been published. Run the install command again; it is safe
 to repeat and keeps your allowlist. The router never updates itself, and the notice only appears when
 the published version is newer. The blocklist itself refreshes daily without any action.
@@ -236,6 +242,35 @@ notice: reinstall once with the install command to get it. Routers on 3.2.0 will
 notice and can reinstall: they keep their variant and stay IPv4-only unless you enable IPv6
 (see [Optional IPv6](#optional-ipv6)).
 See the [CHANGELOG](CHANGELOG.md) for what changed.
+
+## Automatic CDN allowlist
+
+Big CDN ranges are never blocked, so a noisy feed cannot take half the web with it. On every build
+the generator downloads the published ranges of **Cloudflare**, **Fastly** and **CloudFront** and
+subtracts them (IPv4 and IPv6), on top of the static [`allowlist.txt`](allowlist.txt) (GitHub and
+public DNS only).
+
+- A download is rejected if it cannot be read, has fewer than 5 IPv4 prefixes, or contains an IPv4
+  prefix broader than /8 or an IPv6 prefix broader than /16 (so `0.0.0.0/0` never empties the list).
+- A rejected provider falls back to its block in
+  [`allowlist-cdn.snapshot.txt`](allowlist-cdn.snapshot.txt); if it is not there either, the build
+  goes on without it and warns on stderr and in the step summary.
+- Safety cap, measured two ways against the list before the allowlist: the addresses it removes
+  and the entries it touches (an entry that overlaps any allowlist range, wholly or partly). If
+  either is over 10 % of the IPv4 `full` list, the build fails; for IPv6 the IPv6 files are
+  withheld instead. The error gives both numbers. There is no override flag. Usually a feed has
+  started listing CDN or cloud ranges wholesale: remove or narrow that source in `sources.toml`
+  and re-run (see [`docs/security.md`](docs/security.md#when-the-allowlist-cap-stops-the-build)).
+  Adding more ranges to [`allowlist.txt`](allowlist.txt) never gets a build under the cap: it is
+  counted in the same measures.
+- `stats.json` reports it under `cdn_allowlist` (per provider: `source` = `live`, `snapshot` or
+  `missing`, plus `prefixes4` and `prefixes6`) and `cdn_allowlist.cap` (`limit_pct`, and per family
+  `ipv4` / `ipv6`: `addresses`, `addresses_removed`, `addresses_pct`, `entries`, `entries_touched`,
+  `entries_pct`).
+- A snapshot block older than 90 days (date in its `# provider <name> <date>` header) is still
+  used, with a louder warning asking for a refresh.
+- The snapshot is refreshed by hand, through a pull request:
+  `python -m mbl cdn-snapshot --out allowlist-cdn.snapshot.txt`. The workflow never commits to `main`.
 
 ## Uninstall
 
@@ -290,12 +325,12 @@ The [`lists`](https://github.com/Psycomy/MikrotikBlockList/tree/lists) branch co
 |---|---|
 | `routeros-full.txt` | List in the router format (header line, one address per line, footer line); this is what v3 routers on `full` download |
 | `routeros-lite.txt` | Same format, `lite` variant (5 sources, about 4,300 entries); what v3 routers on `lite` download |
-| `blocklist.rsc` | **Legacy**, only for routers still on v2; published unchanged and kept at least until 2027-04-30. v3 routers do not use it |
+| `blocklist.rsc` | **Legacy** and `full` only (there is no `lite` version); only for routers still on v2; published unchanged and kept at least until 2027-04-30. v3 routers do not use it |
 | `blocklist.txt` | Plain list (`full`), one IPv4 address or CIDR per line, no header — **handy for other firewalls** (pfSense, OPNsense, iptables/ipset, nftables…) |
 | `blocklist-lite.txt` | The same plain list for the `lite` variant |
 | `routeros6-full.txt`, `routeros6-lite.txt` | IPv6 lists in the router format (`family=ipv6` in the header); only IPv6 routers download them. Not published on a day when IPv6 fails its checks |
 | `blocklist6.txt`, `blocklist6-lite.txt` | Plain IPv6 lists (`full` / `lite`), one address or CIDR per line (`/128` without mask), for other firewalls |
-| `stats.json` | Generation time, total (`full`), `variants` (total of `full` and `lite`), `ipv6` (`published` and totals per variant), and per-source IPv4 `entries`, IPv6 `entries6` and errors |
+| `stats.json` | Generation time, total (`full`), `variants` (total of `full` and `lite`), `ipv6` (`published` and totals per variant), `cdn_allowlist` (per provider: `source`, `prefixes4`, `prefixes6`), and per-source IPv4 `entries`, IPv6 `entries6` and errors |
 | [`NOTICE.md`](https://github.com/Psycomy/MikrotikBlockList/blob/lists/NOTICE.md) | Attribution: every source used in that build, its URL, terms and entry count |
 | `badge-entries.json`, `badge-updated.json` | shields.io endpoints for the badges above |
 
@@ -382,6 +417,22 @@ The RouterOS installer is also tested end to end on a disposable CHR (`MBL_E2E=1
 
 </details>
 
+## Security and reporting problems
+
+- [`docs/security.md`](docs/security.md): threat model, what to configure on GitHub, and how to report a vulnerability privately.
+- Wrongly blocked address or a bug? Use the issue forms:
+  [false positive](https://github.com/Psycomy/MikrotikBlockList/issues/new?template=false_positive.yml) or
+  [bug report](https://github.com/Psycomy/MikrotikBlockList/issues/new?template=bug.yml).
+- Reinstalling is safe and has no gap: the old `MBL:` rules are renamed `MBL-OLD:` and removed
+  only after the new ones exist.
+- A reinstall never races an update: the installer stops with `MBL: an update is running
+  (mblRunning is set)` and changes nothing while `mbl-update` runs (try again in a minute), and
+  holds the same lock from its first change until its own first load is done, so a daily update
+  started meanwhile is skipped.
+  If the lock is stuck (an interrupted run), clear it with `:global mblRunning false`. As a second
+  guard, `mbl-update` skips a family whose `MBL: in` rule is missing, and drops its load (keeping
+  the active list) if that rule changed while it was loading.
+
 ## License
 
 [GPL-3.0](LICENSE) covers **the code only** (generator, workflow and RouterOS scripts).
@@ -404,7 +455,8 @@ partir de fuentes públicas, y la bloquea en el firewall *raw* de tu router Mikr
 **Fuentes:** 10 listas elegidas tras comparar 44 fuentes gratuitas por tamaño, solapamiento,
 aportación única, falsos positivos (CDN y los 5.000 sitios más visitados), frescura y licencia:
 ver [`docs/source-study-2026-10-20.md`](docs/source-study-2026-10-20.md). La allowlist del
-repositorio excluye siempre el rango de descarga de GitHub, los DNS públicos y los rangos de Cloudflare.
+repositorio excluye siempre el rango de descarga de GitHub y los DNS públicos, y el build resta además los rangos de
+Cloudflare, Fastly y CloudFront de forma automática (ver [Allowlist automática de CDN](#allowlist-automática-de-cdn)).
 
 **Requisitos:** RouterOS **7.21 o superior** (probado en CHR 7.24.5), listas de interfaces **`WAN`**
 y **`LAN`**, y algo de RAM libre: medido en un CHR de 256 MiB con una lista de 40k entradas, unos 36,7 MiB
@@ -431,8 +483,8 @@ active list kept`: `no header`, `bad header`, `no footer`, `header/footer mismat
 `count mismatch`, `too many invalid lines (N)`, `too few entries (N)` o `read error`. Medido en un CHR 7.24.5 (1 vCPU, 256 MiB): 40.000 entradas
 en unos 25 s.
 
-**Elegir variante (*full* o *lite*):** `full` es la de por defecto (38.919 entradas IPv4 el 2026-10-21).
-`lite` (4.299 entradas IPv4) usa solo Spamhaus DROP (y DROPv6 con IPv6 activado), DShield, Emerging Threats compromised, ThreatFox y
+**Elegir variante (*full* o *lite*):** `full` es la de por defecto (38.967 entradas IPv4 el 2026-10-21).
+`lite` (4.304 entradas IPv4) usa solo Spamhaus DROP (y DROPv6 con IPv6 activado), DShield, Emerging Threats compromised, ThreatFox y
 ThreatCluster (columna `lite` de la [tabla de fuentes](#sources-and-licenses)); es para routers con
 poca RAM o si solo quieres bloquear C2 y los rangos de ataque más graves. Para instalar `lite`, pon
 `:global mblVariant "lite"; ` delante del comando de instalación:
@@ -447,7 +499,7 @@ poca RAM o si solo quieres bloquear C2 y los rangos de ataque más graves. Para 
 - La global dura hasta que el router se reinicia; si reinstalas en la misma sesión, defínela de forma
   explícita (`"full"`, `"lite"` o `""` para conservar lo instalado).
 - Cualquier valor distinto de `full` o `lite` detiene el instalador antes de cambiar nada.
-- El mensaje final indica la variante: `MBL: installed (script 3.3.0, variant lite, ipv6 no)`.
+- El mensaje final indica la variante: `MBL: installed (script 3.3.1, variant lite, ipv6 no)`.
 - Una lista descargada con otra `variant=` en la cabecera se rechaza (`bad header`).
 - Límites de publicación: `full` 5.000 a 150.000 entradas, `lite` 1.000 a 20.000; si falla cualquiera
   de las dos, no se publica nada. Tamaño mínimo del fichero en el router: 100.000 bytes (`full`) y
@@ -458,7 +510,7 @@ poca RAM o si solo quieres bloquear C2 y los rangos de ataque más graves. Para 
 **Ficheros publicados:** `routeros-full.txt` y `routeros-lite.txt` (formato del router, con cabecera
 y pie), `blocklist.rsc` (**legado** para routers con v2, solo `full`, se mantiene al menos hasta
 2027-04-30), y `blocklist.txt` y `blocklist-lite.txt` (una entrada por línea, sin cabecera, para otros
-firewalls). `stats.json` añade `variants` con el total de cada variante.
+firewalls). `stats.json` añade `variants` con el total de cada variante y `cdn_allowlist`.
 
 ### IPv6 opcional
 
@@ -478,19 +530,19 @@ Viene **desactivado**. Para bloquear también atacantes IPv6, pon
 - Cualquier valor distinto de `true` o `false` detiene el instalador antes de cambiar nada.
 - La global dura hasta que el router se reinicia; si reinstalas en la misma sesión, defínela de forma
   explícita (`true`, `false` o `""` para conservar lo instalado).
-- El mensaje final indica el estado: `MBL: installed (script 3.3.0, variant full, ipv6 yes)`.
+- El mensaje final indica el estado: `MBL: installed (script 3.3.1, variant full, ipv6 yes)`.
 - Tus excepciones IPv6 van igual que las de IPv4:
   `/ipv6 firewall address-list add list=mbl6-allow address=2001:db8::/32 comment="mi oficina"`.
 - **Mejor esfuerzo:** IPv6 nunca bloquea IPv4. Si la lista IPv6 no pasa las comprobaciones en la
   generación, ese día no se publica ningún fichero IPv6 (IPv4 sí; `stats.json` tiene `ipv6.published`).
   En el router, un fallo de descarga o validación de IPv6 conserva la lista IPv6 activa, registra
   `MBL: ipv6 ...` y no toca nunca las listas ni las reglas IPv4.
-- Fuentes IPv6 hoy (2026-10-21): Spamhaus DROPv6 (91 redes), blocklist.de (unas 523), Turris Sentinel (49)
-  y ThreatCluster (1). El build real da **648** entradas IPv6 en `full` y **86** en `lite` (Spamhaus
+- Fuentes IPv6 hoy (2026-10-21): Spamhaus DROPv6 (91 redes), blocklist.de (unas 512), Turris Sentinel (49)
+  y ThreatCluster (1). El build real da **637** entradas IPv6 en `full` y **86** en `lite` (Spamhaus
   DROPv6 y ThreatCluster).
 - El generador descarta IPv6 no global (ULA, link-local, documentación, multicast, IPv4-mapped,
-  NAT64, 6to4, Teredo), todo lo más amplio que /19 y la parte IPv6 de `allowlist.txt` (Cloudflare,
-  el rango de descarga de GitHub y los DNS públicos). Límites: `full` 50 a 20.000 entradas, `lite`
+  NAT64, 6to4, Teredo), todo lo más amplio que /19 y la parte IPv6 de `allowlist.txt` (el rango de
+  descarga de GitHub y los DNS públicos) más los rangos CDN automáticos. Límites: `full` 50 a 20.000 entradas, `lite`
   20 a 5.000, con las mismas comprobaciones de caída del 50 % y crecimiento de 2x.
 - En el router, cada línea debe ser una dirección IPv6 o un CIDR con prefijo de 19 a 128; el fichero
   necesita al menos 200 bytes y 50 (`full`) o 20 (`lite`) entradas. En una lista pequeña la regla
@@ -523,6 +575,38 @@ Las actualizaciones y reinstalaciones nunca borran tus entradas. El desinstalado
 entradas de `mbl-allow` con el comentario exacto `MBL: admin` (las que añade el instalador): no
 uses ese comentario en las tuyas.
 
+### Allowlist automática de CDN
+
+En cada build se descargan los rangos publicados de **Cloudflare**, **Fastly** y **CloudFront** y se
+restan (IPv4 e IPv6), además de `allowlist.txt` (ahora solo GitHub y DNS públicos). Una descarga se
+rechaza si no se puede leer, trae menos de 5 prefijos IPv4 o contiene un prefijo IPv4 más amplio que
+/8 o IPv6 más amplio que /16; entonces se usa su bloque de
+[`allowlist-cdn.snapshot.txt`](allowlist-cdn.snapshot.txt) (o se sigue sin ese proveedor, con aviso).
+Tope, medido de dos formas sobre la lista sin allowlist: las direcciones que elimina y las entradas
+que toca (las que se solapan, entera o parcialmente, con algún rango de la allowlist). Si cualquiera
+de las dos pasa del 10 % de la lista IPv4 *full*, el build falla; en IPv6 se retiene IPv6. El error
+da las dos cifras. No hay opción para saltárselo: lo normal es que una fuente haya empezado a listar
+rangos de CDN o de nube enteros; quita o acota esa fuente en `sources.toml` y vuelve a lanzar el build
+(añadir rangos a `allowlist.txt` no sirve: cuentan en las mismas medidas). `stats.json` lo refleja en
+`cdn_allowlist` (`live`, `snapshot` o `missing`) y en `cdn_allowlist.cap` (porcentajes de direcciones
+y de entradas por familia). Un bloque de la copia con más de 90 días (fecha de su cabecera) se sigue
+usando, con un aviso para renovarlo. La copia se actualiza a mano con
+`python -m mbl cdn-snapshot --out allowlist-cdn.snapshot.txt`, mediante PR.
+
+### Seguridad y reportes
+
+Modelo de amenaza, ajustes recomendados de GitHub e informe privado de vulnerabilidades:
+[`docs/security.md`](docs/security.md). Para un falso positivo o un fallo usa las plantillas:
+[falso positivo](https://github.com/Psycomy/MikrotikBlockList/issues/new?template=false_positive.yml) y
+[bug](https://github.com/Psycomy/MikrotikBlockList/issues/new?template=bug.yml). Reinstalar no deja
+huecos: las reglas `MBL:` viejas pasan a `MBL-OLD:` y se borran cuando ya existen las nuevas. Tampoco
+choca con una actualización: mientras `mbl-update` corre, el instalador se detiene sin cambiar nada
+(`MBL: an update is running (mblRunning is set)`; reinténtalo en un minuto) y, desde su primer
+cambio hasta terminar su primera carga, tiene el mismo cerrojo, así que una actualización diaria que
+arranque entonces se omite. Si el cerrojo se queda puesto (una ejecución interrumpida), libéralo con `:global mblRunning false`. Además,
+`mbl-update` omite una familia sin su regla `MBL: in` y descarta la carga (conserva la lista activa) si
+esa regla cambió mientras cargaba.
+
 ### Ver bloqueos
 
 ```routeros
@@ -547,7 +631,7 @@ Para probar contra otro servidor, define `:global mblUrlBase "https://host:port"
 
 ### Actualizaciones
 
-Si el router registra un aviso como `MBL: script 3.3.0 available (installed 3.2.0) - reinstall: ...`,
+Si el router registra un aviso como `MBL: script 3.3.1 available (installed 3.3.0) - reinstall: ...`,
 hay publicada una versión más nueva del script. Basta con volver a ejecutar el comando de instalación;
 se puede repetir sin riesgo y conserva tu allowlist. El router nunca se actualiza solo y el aviso solo
 sale si la versión publicada es mayor. La lista se renueva cada día sin hacer nada. Los cambios están

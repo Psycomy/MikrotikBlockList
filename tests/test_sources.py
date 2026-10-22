@@ -113,7 +113,8 @@ class SourcesTest(unittest.TestCase):
     def test_repo_allowlist_has_ipv6(self):
         nets = load_allowlist(Path("allowlist.txt"))
         self.assertIn(IPv6Network("2606:50c0::/32"), nets)
-        self.assertIn(IPv6Network("2a06:98c0::/29"), nets)
+        self.assertIn(IPv6Network("2620:fe::fe/128"), nets)
+        self.assertNotIn(IPv6Network("2a06:98c0::/29"), nets)  # Cloudflare comes from the CDN lists
 
     def test_repo_allowlist_is_valid(self):
         nets = load_allowlist(Path("allowlist.txt"))

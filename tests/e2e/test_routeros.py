@@ -9,8 +9,9 @@ address as seen from that router.
 Existing-host mode is DESTRUCTIVE: it reinstalls MBL, reboots the router and
 finally runs uninstall.rsc, so any previous MBL installation there is gone.
 It therefore also requires MBL_E2E_DESTRUCTIVE=1; without it the class is
-skipped. A best-effort uninstall also runs if a case aborts early or the run
-is interrupted (atexit); after a run killed outright, run uninstall.rsc by hand.
+skipped. A best-effort uninstall (which also removes the test's /ip dns static
+entries, comment MBLTEST) also runs if a case aborts early or the run is
+interrupted (atexit); after a run killed outright, run uninstall.rsc by hand.
 
 Other environment variables: MBL_E2E_CHR_VERSION / MBL_E2E_CHR_SHA256 override the
 pinned tests/e2e/chr-version.txt (an empty SHA256 skips the checksum), and
@@ -26,6 +27,7 @@ import atexit
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -248,6 +250,8 @@ class RouterOsTest(unittest.TestCase):
             cls.chr.run("/import uninstall.rsc", timeout=300)
         with suppress(ChrError, OSError):
             cls.chr.run(':global mblUrlBase ""')
+        with suppress(ChrError, OSError):
+            cls.chr.run(f'/ip dns static remove [find where comment="{DNS_COMMENT}"]')
 
     @classmethod
     def _artifacts(cls) -> Path | None:
@@ -355,13 +359,55 @@ class RouterOsTest(unittest.TestCase):
         self.set_update_path(f"/{name}", "/routeros-full.txt")
 
     def sample_protection(self) -> str:
-        """'<list the MBL: in rule points to> <its entries>', or 'none 0' without the rule."""
+        """'<list the in drop rule points to> <its entries>', or 'none 0' without the rule.
+
+        The rule is "MBL: in", or "MBL-OLD: MBL: in" while a reinstall renames
+        the old rules (they keep dropping until the new ones are added)."""
         return self.chr.run(
             '{:local r [/ip firewall raw find where comment="MBL: in"];'
+            ':if ([:len $r] = 0) do={:set r [/ip firewall raw find where comment="MBL-OLD: MBL: in"]};'
             ':if ([:len $r] = 0) do={:put "none 0"} else={'
             ':local l [/ip firewall raw get ($r->0) src-address-list];'
             ':put ($l . " " . [:len [/ip firewall address-list find where list=$l]])}}'
         ).strip()
+
+    def install_sampled(self) -> list[str]:
+        """Install (test URL base) while another thread samples sample_protection()
+        every 0.5 s; return the samples, the last one taken after the install."""
+        return self.sampled(lambda: self.install(self.base))[1]
+
+    def sampled(self, action):
+        """Run action() while another thread samples sample_protection() every 0.5 s;
+        return its result and the samples, the last one taken after it."""
+        samples: list[str] = []
+        stop = threading.Event()
+
+        def poll():
+            while not stop.is_set():
+                try:
+                    samples.append(self.sample_protection())
+                except ChrError as e:
+                    samples.append(f"error {e}")
+                stop.wait(0.5)
+
+        poller = threading.Thread(target=poll, daemon=True)
+        poller.start()
+        try:
+            result = action()
+        finally:
+            stop.set()
+            poller.join(30)
+        samples.append(self.sample_protection())
+        return result, samples
+
+    def assert_always_protected(self, samples: list[str]) -> None:
+        """Every sample has an in drop rule (see sample_protection) on a list with
+        at least MIN_ENTRIES."""
+        self.assertGreaterEqual(len(samples), 3, samples)
+        for smp in samples:
+            name, _, n = smp.partition(" ")
+            self.assertNotEqual(name, "none", f"rule missing: {samples}")
+            self.assertTrue(n.isdigit() and int(n) >= MIN_ENTRIES, f"{smp!r} in {samples}")
 
     # -- cases --------------------------------------------------------------
 
@@ -458,6 +504,230 @@ class RouterOsTest(unittest.TestCase):
         self.assertEqual(self.num("/ip firewall address-list", admin), admins)
         self.assertGreaterEqual(self.count(self.active_list()), MIN_ENTRIES)
 
+    def test_07b_reinstall_no_rule_gap(self):
+        # v3 -> v3: the old rules keep dropping (as MBL-OLD:) until the new ones exist
+        self.assertGreaterEqual(self.count(self.active_list()), MIN_ENTRIES)
+        self.assert_always_protected(self.install_sampled())
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL-OLD:"'), 0)
+
+    def test_07c_old_rules_cleaned(self):
+        # what an install aborted between the rename and the cleanup leaves behind
+        self.chr.run('/ip firewall raw add chain=prerouting in-interface-list=WAN '
+                     'src-address-list=mbl-a action=drop comment="MBL-OLD: in"')
+        self.assertEqual(self.num("/ip firewall raw", 'comment="MBL-OLD: in"'), 1)
+        self.install(self.base)
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL-OLD:"'), 0)
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
+        self.assertGreaterEqual(self.count(self.active_list()), MIN_ENTRIES)
+
+    def wait_not_running(self, timeout: float = 300) -> None:
+        deadline = time.monotonic() + timeout
+        while self.running():
+            self.assertLess(time.monotonic(), deadline, "mbl-update still running")
+            time.sleep(1)
+
+    def start_update_bg(self) -> None:
+        """Start mbl-update in the background and wait until it holds the lock."""
+        self.chr.run(":execute {/system script run mbl-update}")
+        deadline = time.monotonic() + 30
+        while not self.running():
+            self.assertLess(time.monotonic(), deadline, "mbl-update did not start")
+            time.sleep(0.2)
+
+    def test_07d_update_skips_family_without_rules(self):
+        active, n = self.active_list(), self.count(self.active_list())
+        other = "mbl-b" if active == "mbl-a" else "mbl-a"
+        self.chr.run('/ip firewall raw set [find where comment="MBL: in"] comment="MBLTEST: in"')
+        try:
+            token = self.mark()
+            self.server.requests.clear()
+            self.update()
+            log = self.log_after(token)
+            self.assertIn("MBL: ipv4 rules missing, update skipped", log)
+            self.assertNotIn("MBL: loaded", log)
+            self.assertEqual(self.server.requests, [])
+            self.assertEqual(self.count(active), n)
+            self.assertEqual(self.count(other), 0)
+            self.assertFalse(self.running())
+        finally:
+            self.chr.run('/ip firewall raw set [find where comment="MBLTEST: in"] '
+                         'comment="MBL: in"')
+        self.assertEqual(self.active_list(), active)
+
+    def test_07e_rules_changed_during_update(self):
+        # what a reinstall does to the rules while an update is loading a list
+        active, n = self.active_list(), self.count(self.active_list())
+        target = "mbl-b" if active == "mbl-a" else "mbl-a"
+        token = self.mark()
+        try:
+            # the router itself waits for the first loaded entry and renames the
+            # rule at once (a poll over SSH can miss the ~2 s load of 10000 entries)
+            self.chr.run(
+                '{:execute {/system script run mbl-update}; :local i 0;'
+                f':while ([:len [/ip firewall address-list find where list="{target}"]] = 0'
+                ' && $i < 1200) do={:delay 100ms; :set i ($i + 1)};'
+                '/ip firewall raw set [find where comment="MBL: in"] '
+                'comment="MBL-OLD: MBL: in"}', timeout=300)
+            self.wait_not_running()
+        finally:
+            self.chr.run('/ip firewall raw set [find where comment="MBL-OLD: MBL: in"] '
+                         'comment="MBL: in"')
+        log = self.log_after(token)
+        self.assertIn("MBL: ipv4 rules changed during update, aborted", log)
+        self.assertNotIn("MBL: loaded", log)
+        self.assertEqual(self.active_list(), active)
+        self.assertEqual(self.count(active), n)
+        self.assertEqual(self.count(target), 0)
+        for rule in ("MBL: out", "MBL: router-out"):
+            self.assertEqual(self.put(f'[/ip firewall raw get [find where comment="{rule}"] '
+                                      'dst-address-list]'), active, rule)
+
+    def test_07f_reinstall_during_update(self):
+        # an update runs in the background when the installer starts: the installer
+        # refuses (nothing changed), or completes when it took the lock first
+        self.assertFalse(self.running())
+        source = self.update_source()
+        self.chr.upload(ROUTEROS / "install.rsc", "install.rsc")
+
+        def race() -> str:
+            try:
+                out = self.chr.run(':execute {/system script run mbl-update}; '
+                                   f':global mblUrlBase "{self.base}"; /import install.rsc',
+                                   timeout=600)
+            except ChrError as e:
+                out = str(e)
+            self.wait_not_running()
+            return out
+
+        token = self.mark()
+        out, samples = self.sampled(race)
+        log = self.log_after(token)
+        refused = "an update is running (mblRunning is set)" in out
+        self.assertTrue(refused or "MBL: installed" in out, out)
+        # which branch ran: the installer refused, or it completed and the
+        # background update loaded first, was skipped on the lock / on missing
+        # rules, or dropped its load because the rules changed
+        if refused:
+            branch = "installer refused"
+        elif "update already running, skipped" in log:
+            branch = "installer completed, update skipped (lock)"
+        elif "rules missing, update skipped" in log:
+            branch = "installer completed, update skipped (rules missing)"
+        elif "rules changed during update, aborted" in log:
+            branch = "installer completed, update aborted (rules changed)"
+        else:
+            branch = "installer completed, update loaded"
+        print(f"\n  test_07f branch: {branch}", file=sys.stderr)
+        self.assertIn(branch, {
+            "installer refused", "installer completed, update skipped (lock)",
+            "installer completed, update skipped (rules missing)",
+            "installer completed, update aborted (rules changed)",
+            "installer completed, update loaded"}, log)
+        if refused:
+            self.assertIn("Nothing was changed.", out)
+            self.assertEqual(self.num("/system script", 'name="mbl-update"'), 1)
+            self.assertEqual(self.update_source(), source)
+        else:
+            self.assertIn("MBL: installed", log)
+        self.assertGreaterEqual(self.count(self.active_list()), MIN_ENTRIES, branch)
+        self.assert_always_protected(samples)
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL-OLD:"'), 0)
+        self.assertEqual(self.num("/system scheduler", 'name~"^mbl-"'), 2)
+        self.assertGreaterEqual(self.count(self.active_list()), MIN_ENTRIES)
+        self.assertGreater(self.count("mbl-a") + self.count("mbl-b"), 0)
+        self.assertFalse(self.running())
+
+    def test_07g_installer_refuses_while_locked(self):
+        # deterministic form of 07f's refusal: the lock is held when it starts
+        before = (self.active_list(), self.count(self.active_list()), self.update_source())
+        self.server.requests.clear()
+        self.chr.upload(ROUTEROS / "install.rsc", "install.rsc")
+        try:
+            out = self.chr.run(':global mblRunning true; '
+                               f':global mblUrlBase "{self.base}"; /import install.rsc',
+                               timeout=600)
+        except ChrError as e:
+            out = str(e)
+        finally:
+            self.chr.run(":global mblRunning false")
+        self.assertIn("MBL: an update is running (mblRunning is set); try again in a minute, "
+                      "or clear it with :global mblRunning false. Nothing was changed.", out)
+        self.assertEqual(self.server.requests, [])
+        self.assertEqual((self.active_list(), self.count(self.active_list()),
+                          self.update_source()), before)
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL-OLD:"'), 0)
+
+    def test_07h_lock_released_after_install_error(self):
+        # an installer whose step 5 fails (a placeholder that is not in mbl-update)
+        installer = (ROUTEROS / "install.rsc").read_text()
+        good = '$mblInject "@MBL_IPV6@" $mblV6'
+        self.assertIn(good, installer)
+        with tempfile.TemporaryDirectory() as d:
+            broken = Path(d) / "install.rsc"
+            broken.write_text(installer.replace(good, '$mblInject "@MBL_NOPE@" $mblV6'))
+            self.chr.upload(broken, "install.rsc")
+        active, n = self.active_list(), self.count(self.active_list())
+        try:
+            out = self.chr.run(f':global mblUrlBase "{self.base}"; /import install.rsc',
+                               timeout=600)
+        except ChrError as e:
+            out = str(e)
+        self.assertIn("placeholder @MBL_NOPE@ not found", out)
+        self.assertFalse(self.running())
+        # the renamed old rules keep dropping on the old list
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 0)
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL-OLD:"'), 6)
+        self.assertEqual(self.sample_protection(), f"{active} {n}")
+        # a reinstall finds the old list through "MBL-OLD: MBL: in" and cleans up
+        self.assert_always_protected(self.install_sampled())
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL-OLD:"'), 0)
+        self.assertEqual(self.num("/system scheduler", 'name~"^mbl-"'), 2)
+        self.assertEqual(self.count(self.active_list()), LIST_SIZE)
+        self.assertFalse(self.running())
+
+    def test_07i_update_during_reinstall_skipped(self):
+        # the installer holds the lock from step 2 through its own first load:
+        # an update started meanwhile (scheduler, by hand) is skipped
+        self.assertFalse(self.running())
+        token = self.mark()
+        result: dict[str, str] = {}
+
+        def install():
+            try:
+                result["out"] = self.install(self.base)
+            except ChrError as e:
+                result["out"] = str(e)
+
+        installer = threading.Thread(target=install, daemon=True)
+        installer.start()
+        try:
+            deadline = time.monotonic() + 120
+            # the lock is held and mbl-update exists again (step 3 removes it, step 5
+            # adds the new one): what a daily scheduler run would meet
+            while not (self.running() and self.num("/system script", 'name="mbl-update"')):
+                self.assertTrue(installer.is_alive(), f"installer ended first: {result}")
+                self.assertLess(time.monotonic(), deadline, "installer never took the lock")
+                time.sleep(0.2)
+            self.update()
+        finally:
+            installer.join(600)
+        self.assertFalse(installer.is_alive())
+        log = self.log_after(token)
+        self.assertIn("MBL: installed", result.get("out", ""), result)
+        self.assertIn("MBL: update already running, skipped", log)
+        loads = [ln for ln in log.splitlines() if ln.startswith("script;") and "MBL: loaded" in ln]
+        self.assertEqual(len(loads), 1, log)  # only the installer's first load
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL-OLD:"'), 0)
+        self.assertEqual(self.count(self.active_list()), LIST_SIZE)
+        self.assertFalse(self.running())
+        self.assertEqual(self.chr.run(":global mblInstallRun; :put $mblInstallRun").strip(),
+                         "false")
+
     def test_08_uninstall_clean(self):
         lists = 'name="WAN" or name="LAN"'
         members = 'list="WAN" or list="LAN"'
@@ -509,42 +779,14 @@ class RouterOsTest(unittest.TestCase):
         rsc = 'name~"^mbl-.*\\\\.rsc"'
         self.assertEqual(self.num("/file", rsc), 1, self.chr.run("/file print"))  # pattern control
         token = self.mark()
-        samples: list[str] = []
-        stop = threading.Event()
-
-        def poll():
-            while not stop.is_set():
-                try:
-                    samples.append(self.sample_protection())
-                except ChrError as e:
-                    samples.append(f"error {e}")
-                stop.wait(0.5)
-
-        poller = threading.Thread(target=poll, daemon=True)
-        poller.start()
-        try:
-            self.install(self.base)
-        finally:
-            stop.set()
-            poller.join(30)
-        samples.append(self.sample_protection())
-        self.assertGreaterEqual(len(samples), 3, samples)
-        # every sample sees a populated list. The installer removes and recreates
-        # the rules, so a single sample without the rule is tolerated, no more.
-        prev_none = False
-        for smp in samples:
-            name, _, n = smp.partition(" ")
-            if name == "none":
-                self.assertFalse(prev_none, f"rule missing in 2 consecutive samples: {samples}")
-                prev_none = True
-                continue
-            prev_none = False
-            self.assertTrue(n.isdigit() and int(n) >= MIN_ENTRIES, f"{smp!r} in {samples}")
+        # every sample sees the rule on a populated list, with no gap at all
+        self.assert_always_protected(self.install_sampled())
         log = self.log_after(token)
         # the v3 load itself happened, whatever the final count says
         self.assertIn(f"MBL: loaded {LIST_SIZE} entries", log)
         self.assertIn("MBL: removed v2 files", log)
         self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL-OLD:"'), 0)
         self.assertEqual(self.num("/file", rsc), 0, self.chr.run("/file print"))
         self.assertEqual(self.num("/file", 'name="mbl-last.txt"'), 1, self.chr.run("/file print"))
         # the v3 load went to the other list (it does not clear the v2 one first)
@@ -740,7 +982,7 @@ class RouterOsTest(unittest.TestCase):
     def mbl6_objects(self) -> dict[str, int]:
         """Every IPv6 MBL object on the router: raw rules, mbl6-* list entries, mbl6-* files."""
         return {
-            "rules": self.num("/ipv6 firewall raw", 'comment~"^MBL:"'),
+            "rules": self.num("/ipv6 firewall raw", 'comment~"^MBL(-OLD)?:"'),
             "entries": self.num("/ipv6 firewall address-list", 'list~"^mbl6-"'),
             "files": self.num("/file", 'name~"mbl6-"'),
         }
@@ -863,6 +1105,10 @@ class RouterOsTest(unittest.TestCase):
                     self.set_update_path(f"/{name}", "/routeros6-full.txt")
 
     def test_14o_disable_ipv6_cleans_up(self):
+        # an MBL-OLD: IPv6 rule, as an aborted reinstall leaves, goes too
+        self.chr.run('/ipv6 firewall raw add chain=prerouting src-address-list=mbl6-a '
+                     'action=drop comment="MBL-OLD: MBL: in"')
+        self.assertEqual(self.num("/ipv6 firewall raw", 'comment~"^MBL-OLD:"'), 1)
         before = self.mbl6_objects()  # something to clean up
         self.assertGreater(before["rules"], 0, before)
         self.assertGreater(before["entries"], 0, before)
@@ -873,6 +1119,7 @@ class RouterOsTest(unittest.TestCase):
         self.assertIn("/routeros-full.txt", self.server.requests)
         self.assertEqual(self.requests6(), [])
         self.assertEqual(self.mbl6_objects(), {"rules": 0, "entries": 0, "files": 0})
+        self.assertEqual(self.num("/ipv6 firewall raw", 'comment~"^MBL-OLD:"'), 0)
         self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
         self.assertEqual(self.count(self.active_list()), LIST_SIZE)
         self.assertIn(f"MBL: installed (script {self.installed_version}, variant full, ipv6 no)",
@@ -886,11 +1133,18 @@ class RouterOsTest(unittest.TestCase):
         # uninstall removes both families: give IPv6 something to remove first
         self.install_ipv6("true")
         self.assertGreater(self.mbl6_objects()["rules"], 0)
+        # and an MBL-OLD: rule per family, as an interrupted reinstall leaves
+        for path, lst in (("/ip firewall raw", "mbl-a"), ("/ipv6 firewall raw", "mbl6-a")):
+            self.chr.run(f'{path} add chain=prerouting src-address-list={lst} action=drop '
+                         'comment="MBL-OLD: in"')
+            self.assertEqual(self.num(path, 'comment~"^MBL-OLD:"'), 1, path)
         self.uninstall()
         self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 0)
         self.assertEqual(self.num("/system script", 'name~"^mbl-"'), 0)
         self.assertEqual(self.count("mbl-a") + self.count("mbl-b"), 0)
         self.assertEqual(self.mbl6_objects(), {"rules": 0, "entries": 0, "files": 0})
+        for path in ("/ip firewall raw", "/ipv6 firewall raw"):
+            self.assertEqual(self.num(path, 'comment~"^MBL-OLD:"'), 0, path)
 
 
 if __name__ == "__main__":
