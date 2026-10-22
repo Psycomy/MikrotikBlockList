@@ -44,6 +44,13 @@ It prints one line per problem (nothing when healthy) and exits with 3 when ther
     **allow_growth** (growth only). A real drop usually means a source broke: see above.
   - The allowlist cap stopped it: see [the security guide](security.md#when-the-allowlist-cap-stops-the-build).
   Routers keep their last good list meanwhile and log `MBL: list is N days old` after a few days.
+- **`warning: lookup.json not published (...)`** (in the run log, not an issue): the data for the
+  [lookup page](https://psycomy.github.io/MikroBlockList/) was skipped; the lists were still
+  published. The page keeps showing the previous `lookup.json`. The reason is in the parentheses.
+- **`warning: DB-IP unavailable (...); lookup.json without countries`**: the DB-IP Country Lite
+  file (CC BY 4.0, cached monthly in Actions by `python -m mbl dbip-fetch --cache .dbip`) was
+  missing or unreadable. The page works but shows no countries. Rerun the `build` workflow; if it
+  persists, check the download URL in `mbl/geo.py`.
 - **`stats.json unavailable`**: the `lists` branch or raw.githubusercontent.com could not be read;
   check that the branch exists and that the latest `build` run published.
 

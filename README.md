@@ -16,6 +16,7 @@
 </p>
 
 <p align="center">
+  <a href="https://psycomy.github.io/MikroBlockList/"><b>Is my IP listed?</b></a> ·
   <a href="#install">Install</a> ·
   <a href="#what-gets-created">What gets created</a> ·
   <a href="#see-what-is-blocked">Logs</a> ·
@@ -260,6 +261,11 @@ Something you need is blocked? Add it to `mbl-allow` (an address or a CIDR):
 Entries you add are never removed by updates or reinstalls. The uninstaller removes only
 `mbl-allow` entries whose comment is exactly `MBL: admin` (the ones the installer adds), so do not
 use that comment for your own entries.
+
+Not sure whether an address is listed? Check it at
+[psycomy.github.io/MikroBlockList](https://psycomy.github.io/MikroBlockList/): the search runs in
+your browser and nothing you type is sent anywhere. If it is a false positive, open a
+[false-positive issue](https://github.com/Psycomy/MikroBlockList/issues/new?template=false_positive.yml).
 
 ## Updates
 
@@ -625,6 +631,11 @@ Viene **desactivado**. Para bloquear también atacantes IPv6, pon
 Las actualizaciones y reinstalaciones nunca borran tus entradas. El desinstalador solo borra las
 entradas de `mbl-allow` con el comentario exacto `MBL: admin` (las que añade el instalador): no
 uses ese comentario en las tuyas.
+
+¿No sabes si una dirección está en la lista? Compruébalo en
+[psycomy.github.io/MikroBlockList](https://psycomy.github.io/MikroBlockList/): la búsqueda se hace
+en tu navegador y nada de lo que escribes se envía a ningún sitio. Si es un falso positivo, abre un
+[issue de falso positivo](https://github.com/Psycomy/MikroBlockList/issues/new?template=false_positive.yml).
 
 ### Allowlist automática de CDN
 

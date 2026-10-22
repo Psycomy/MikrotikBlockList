@@ -7,7 +7,7 @@ body:
     id: address
     attributes:
       label: IP or CIDR
-      description: The address or network that is wrongly blocked.
+      description: "The address or network that is wrongly blocked. Check it first at https://psycomy.github.io/MikroBlockList/"
       placeholder: 203.0.113.10 or 203.0.113.0/24
     validations:
       required: true

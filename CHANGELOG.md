@@ -7,6 +7,19 @@ published list carries it as `script=<version>` in its header.
 
 ## [Unreleased]
 
+### Added
+- Lookup page at <https://psycomy.github.io/MikroBlockList/>: search an IPv4, IPv6 or CIDR and see
+  which sources list it and where in the world the listed ranges are. It runs in the browser and
+  sends nothing anywhere (ES/EN). Deployed by the new `pages` workflow.
+- `lookup.json` on the `lists` branch, built daily with countries from DB-IP Country Lite
+  (CC BY 4.0, cached monthly). If it cannot be built the run only warns and the lists still publish.
+- A test that the false-positive issue form lists every enabled source.
+
+### Changed
+- `NOTICE.md` has a "Notice" column with each source's copyright line (Spamhaus' copyright and
+  date, as their DROP FAQ asks).
+- The false-positive form and the README link to the lookup page.
+
 ## [3.5.0] - 2026-10-22
 
 ### Added
