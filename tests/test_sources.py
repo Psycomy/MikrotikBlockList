@@ -71,7 +71,7 @@ class SourcesTest(unittest.TestCase):
     def test_repo_catalog_lite_sources(self):
         sources = load_sources(Path("sources.toml"))
         lite = {s.name for s in sources if "lite" in s.variants}
-        self.assertEqual(lite, {"spamhaus-drop", "spamhaus-drop-v6", "dshield", "et-compromised", "threatfox", "threatcluster"})
+        self.assertEqual(lite, {"spamhaus-drop", "spamhaus-drop-v6", "dshield", "et-compromised", "threatcluster"})
 
     def test_allowlist_parses(self):
         with tempfile.TemporaryDirectory() as tmp:

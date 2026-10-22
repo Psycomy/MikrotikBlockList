@@ -94,8 +94,8 @@ allowlist is kept.
 
 | Variant | Entries (2026-10-21) | Sources | For |
 |---|---|---|---|
-| `full` (default) | 38,967 | all enabled sources | Routers with enough RAM: attackers, scanners and C2 |
-| `lite` | 4,304 | Spamhaus DROP (and DROPv6 with IPv6 on), DShield, Emerging Threats compromised, ThreatFox, ThreatCluster (the `lite` column of [Sources](#sources-and-licenses)) | Little RAM, or you only want C2 and the most serious attack ranges |
+| `full` (default) | 37,256 | all enabled sources | Routers with enough RAM: attackers, scanners and C2 |
+| `lite` | 2,143 | Spamhaus DROP (and DROPv6 with IPv6 on), DShield, Emerging Threats compromised, ThreatCluster (the `lite` column of [Sources](#sources-and-licenses)) | Little RAM, or you only want C2 and the most serious attack ranges |
 
 To install `lite`, put `:global mblVariant "lite"; ` in front of the one-liner:
 
@@ -300,7 +300,7 @@ Defined in [`sources.toml`](sources.toml). **C2** = botnet command-and-control s
 | [IPsum level 3](https://github.com/stamparm/ipsum) | attack |  | The Unlicense (public domain) |
 | [Binary Defense banlist](https://www.binarydefense.com/) | attack |  | Public use only, no commercial use (file header) |
 | [Turris Sentinel greylist](https://view.sentinel.turris.cz/greylist-data/) (CZ.NIC, honeypots on Turris routers) | attack |  | CC BY-NC-SA 4.0 (non-commercial only, attribution) |
-| [abuse.ch ThreatFox](https://threatfox.abuse.ch/) | c2 | yes | abuse.ch fair use, free; commercial use may need the paid API |
+| ~~[abuse.ch ThreatFox](https://threatfox.abuse.ch/)~~ *(disabled)* | c2 | — | Disabled 2026-10-22: abuse.ch Terms of Use §7.3 forbid republishing or deriving from their data without express consent, and ThreatFox is no longer CC0 |
 | [ThreatCluster](https://threatcluster.io/iocs) | c2 | yes | **No license stated** — check the source terms |
 | [Data-Shield IPv4](https://github.com/duggytuxy/Data-Shield_IPv4_Blocklist) *(optional, disabled)* | attack |  | Repository GPLv3 |
 | [AbuseIPDB s100 (borestad)](https://github.com/borestad/blocklist-abuseipdb) *(optional, disabled)* | attack |  | No license stated; AbuseIPDB data used with permission |
@@ -310,7 +310,9 @@ false positives against CDN ranges and the top 5,000 sites, freshness and licens
 [`docs/source-study-2026-10-20.md`](docs/source-study-2026-10-20.md).
 
 **Removed:** GreenSnow (forbids republication); Feodo Tracker (not updated since March 2026);
-C2IntelFeeds (fully contained in ThreatFox); BruteForceBlocker (≈ Emerging Threats compromised);
+ThreatFox (disabled 2026-10-22: its public export is gone and abuse.ch's
+[Terms of Use](https://abuse.ch/terms-of-use/) §7.3 don't allow republishing its data without consent);
+C2IntelFeeds (was fully contained in ThreatFox); BruteForceBlocker (≈ Emerging Threats compromised);
 Emerging Threats block IPs (= Spamhaus DROP + DShield); StopForumSpam (forum-spam ranges).
 Dataplane.org was not added because it forbids redistribution.
 
@@ -483,8 +485,8 @@ active list kept`: `no header`, `bad header`, `no footer`, `header/footer mismat
 `count mismatch`, `too many invalid lines (N)`, `too few entries (N)` o `read error`. Medido en un CHR 7.24.5 (1 vCPU, 256 MiB): 40.000 entradas
 en unos 25 s.
 
-**Elegir variante (*full* o *lite*):** `full` es la de por defecto (38.967 entradas IPv4 el 2026-10-21).
-`lite` (4.304 entradas IPv4) usa solo Spamhaus DROP (y DROPv6 con IPv6 activado), DShield, Emerging Threats compromised, ThreatFox y
+**Elegir variante (*full* o *lite*):** `full` es la de por defecto (37.256 entradas IPv4 el 2026-10-22).
+`lite` (2.143 entradas IPv4) usa solo Spamhaus DROP (y DROPv6 con IPv6 activado), DShield, Emerging Threats compromised y
 ThreatCluster (columna `lite` de la [tabla de fuentes](#sources-and-licenses)); es para routers con
 poca RAM o si solo quieres bloquear C2 y los rangos de ataque más graves. Para instalar `lite`, pon
 `:global mblVariant "lite"; ` delante del comando de instalación:
