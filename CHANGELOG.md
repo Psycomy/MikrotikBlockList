@@ -5,6 +5,19 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/). The version in use is in [`VERSION`](VERSION), and the
 published list carries it as `script=<version>` in its header.
 
+## [Unreleased]
+
+### Added
+- Automatic maintenance issues, each closed again by the next healthy run:
+  - `build-health` (daily): failed or empty sources, CDN snapshot fallback, IPv6 withheld,
+    stale lists, or a run that did not publish. The check is also a command:
+    `python -m mbl health --stats <url>`.
+  - `routeros-e2e` (weekly): the latest stable RouterOS fails the end-to-end tests.
+  - `cdn-snapshot` (monthly): the live CDN ranges differ from the snapshot. The refreshed file is
+    pushed to a branch, and the issue links to open the PR.
+- Dependabot for the GitHub Actions versions (monthly, one grouped PR).
+- `docs/maintenance.md`: what to do for each issue, script releases, yearly source review.
+
 ## [3.4.1] - 2026-10-22
 
 ### Changed

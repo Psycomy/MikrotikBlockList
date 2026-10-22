@@ -1,4 +1,4 @@
-"""Command line entry point: python -m mbl build ..."""
+"""Command line entry point: python -m mbl build | cdn-snapshot | health."""
 import argparse
 import sys
 from datetime import datetime, timezone
@@ -6,6 +6,7 @@ from pathlib import Path
 
 from mbl.build import build
 from mbl.cdn import DEFAULT_SNAPSHOT, fetch_live, write_snapshot
+from mbl.health import run as health
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -23,7 +24,14 @@ def main(argv: list[str] | None = None) -> int:
                    help="CDN provider lists used when a live download is rejected")
     s = sub.add_parser("cdn-snapshot", help="download the CDN lists into a snapshot file")
     s.add_argument("--out", type=Path, default=DEFAULT_SNAPSHOT)
+    h = sub.add_parser("health", help="check a published build; prints one line per problem")
+    h.add_argument("--stats", required=True, metavar="URL_OR_PATH")
     args = parser.parse_args(argv)
+    if args.command == "health":
+        found = health(args.stats)
+        for line in found:
+            print(line)
+        return 3 if found else 0
     if args.command == "cdn-snapshot":
         try:
             blocks = fetch_live()
