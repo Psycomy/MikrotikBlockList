@@ -16,6 +16,7 @@
 </p>
 
 <p align="center">
+  <a href="https://psycomy.github.io/MikroBlockList/"><b>Is my IP listed?</b></a> ·
   <a href="#install">Install</a> ·
   <a href="#what-gets-created">What gets created</a> ·
   <a href="#see-what-is-blocked">Logs</a> ·
@@ -261,6 +262,11 @@ Entries you add are never removed by updates or reinstalls. The uninstaller remo
 `mbl-allow` entries whose comment is exactly `MBL: admin` (the ones the installer adds), so do not
 use that comment for your own entries.
 
+Not sure whether an address is listed? Check it at
+[psycomy.github.io/MikroBlockList](https://psycomy.github.io/MikroBlockList/): the search runs in
+your browser and nothing you type is sent anywhere. If it is a false positive, open a
+[false-positive issue](https://github.com/Psycomy/MikroBlockList/issues/new?template=false_positive.yml).
+
 ## Updates
 
 When the router logs a warning like `MBL: script 3.3.1 available (installed 3.3.0) - reinstall: ...`,
@@ -482,6 +488,8 @@ only to describe the routers this project works with.
 **MikroBlockList** genera cada día una lista IPv4 (e IPv6, opcional) de atacantes y servidores C2 de botnets a
 partir de fuentes públicas, y la bloquea en el firewall *raw* de tu router MikroTik (RouterOS v7).
 
+**[¿Está mi IP en la lista?](https://psycomy.github.io/MikroBlockList/)** Comprueba una IP o un rango en tu navegador.
+
 > [!WARNING]
 > **Solo para uso doméstico / no comercial: varias fuentes prohíben el uso comercial.**
 > Algunas son CC BY-NC-SA o "solo no comercial", y otras no tienen una licencia de
@@ -625,6 +633,11 @@ Viene **desactivado**. Para bloquear también atacantes IPv6, pon
 Las actualizaciones y reinstalaciones nunca borran tus entradas. El desinstalador solo borra las
 entradas de `mbl-allow` con el comentario exacto `MBL: admin` (las que añade el instalador): no
 uses ese comentario en las tuyas.
+
+¿No sabes si una dirección está en la lista? Compruébalo en
+[psycomy.github.io/MikroBlockList](https://psycomy.github.io/MikroBlockList/): la búsqueda se hace
+en tu navegador y nada de lo que escribes se envía a ningún sitio. Si es un falso positivo, abre un
+[issue de falso positivo](https://github.com/Psycomy/MikroBlockList/issues/new?template=false_positive.yml).
 
 ### Allowlist automática de CDN
 

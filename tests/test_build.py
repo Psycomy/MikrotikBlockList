@@ -1,4 +1,5 @@
 import contextlib
+import gzip
 import io
 import json
 import tempfile
@@ -26,7 +27,7 @@ variants = ["lite", "full"]
 """
 FILES = {"blocklist.txt", "stats.json",
          "badge-entries.json", "badge-updated.json", "NOTICE.md", "routeros-full.txt",
-         "routeros-lite.txt", "blocklist-lite.txt"}
+         "routeros-lite.txt", "blocklist-lite.txt", "lookup.json"}
 
 
 NO_CDN = CdnResult([], {})
@@ -104,6 +105,51 @@ class BuildTest(BuildBase):
     def test_build_writes_outputs(self):
         self.assertEqual(self._build(_fetcher()), 0)
         self.assertEqual({p.name for p in self.out.iterdir()}, FILES)
+
+    def test_build_writes_lookup(self):
+        self.assertEqual(self._build(_fetcher()), 0)
+        data = json.loads((self.out / "lookup.json").read_text(encoding="utf-8"))
+        self.assertEqual(data["format"], 1)
+        self.assertEqual(len(data["v4"]["full"]), 600)
+        self.assertIsNone(data["dbip_month"])
+
+    def test_build_failure_isolated(self):
+        self.out.mkdir()
+        (self.out / "lookup.json").write_text("stale")
+        err = io.StringIO()
+        with mock.patch("mbl.build.lookup_data", side_effect=RuntimeError("bad")), \
+                contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            code = build(self.sources, self.allow, self.out, None, now=WHEN,
+                         fetcher=_fetcher(), version_path=self.version)
+        self.assertEqual(code, 0)
+        self.assertTrue((self.out / "blocklist.txt").exists())
+        self.assertTrue((self.out / "routeros-full.txt").exists())
+        self.assertFalse((self.out / "lookup.json").exists())
+        self.assertIn("lookup.json not published", err.getvalue())
+
+    def test_build_bad_dbip_publishes_without_countries(self):
+        bad = self.tmp / "dbip-country-lite-2026-10.csv.gz"
+        bad.write_text("not gzip")
+        for path in (bad, self.tmp / "missing.csv.gz"):
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+                code = build(self.sources, self.allow, self.out, None, now=WHEN,
+                             fetcher=_fetcher(), version_path=self.version, dbip_path=path)
+            self.assertEqual(code, 0)
+            data = json.loads((self.out / "lookup.json").read_text(encoding="utf-8"))
+            self.assertIsNone(data["dbip_month"])
+            self.assertEqual({e[2] for e in data["v4"]["full"]}, {""})
+            self.assertIn("DB-IP unavailable", err.getvalue())
+            self.assertIn("lookup.json without countries", err.getvalue())
+
+    def test_build_with_dbip(self):
+        dbip = self.tmp / "dbip-country-lite-2026-10.csv.gz"
+        with gzip.open(dbip, "wt", encoding="utf-8") as fh:
+            fh.write("1.0.0.0,1.255.255.255,DE\n")
+        self.assertEqual(self._build(_fetcher(), dbip_path=dbip), 0)
+        data = json.loads((self.out / "lookup.json").read_text(encoding="utf-8"))
+        self.assertEqual(data["dbip_month"], "2026-10")
+        self.assertEqual({e[2] for e in data["v4"]["full"]}, {"DE"})
 
     def test_build_refuses_on_required_failure(self):
         self.assertEqual(self._build(_fetcher(error="boom")), 1)
@@ -434,7 +480,8 @@ variants = ["lite", "full"]
 
     def test_ipv4_outputs_unchanged_by_ipv6(self):
         self.assertEqual(self._build(_fetcher()), 0)
-        before = {n: (self.out / n).read_bytes() for n in FILES - {"stats.json", "NOTICE.md"}}
+        before = {n: (self.out / n).read_bytes()
+                  for n in FILES - {"stats.json", "NOTICE.md", "lookup.json"}}
         self.sources.write_text(SOURCES6_TOML)
         self.assertEqual(self._build(_fetcher6()), 0)
         for name, data in before.items():
@@ -519,6 +566,13 @@ class MainTest(unittest.TestCase):
         self.assertFalse(build_mock.call_args.kwargs["allow_growth"])
         self.assertEqual(main(["build", "--allow-growth"]), 0)
         self.assertTrue(build_mock.call_args.kwargs["allow_growth"])
+
+    @mock.patch("mbl.__main__.build", return_value=0)
+    def test_dbip_flag(self, build_mock):
+        main(["build"])
+        self.assertIsNone(build_mock.call_args.kwargs["dbip_path"])
+        main(["build", "--dbip", "x/db.csv.gz"])
+        self.assertEqual(build_mock.call_args.kwargs["dbip_path"], Path("x/db.csv.gz"))
 
     @mock.patch("mbl.__main__.build", return_value=0)
     def test_version_file_flag(self, build_mock):

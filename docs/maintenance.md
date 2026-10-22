@@ -21,6 +21,15 @@ python3 -m mbl health --stats https://raw.githubusercontent.com/Psycomy/MikroBlo
 
 It prints one line per problem (nothing when healthy) and exits with 3 when there is a problem.
 
+## Lookup page
+
+The "is this IP listed?" page lives in `site/` and is served at
+<https://psycomy.github.io/MikroBlockList/>. It reads `lookup.json` from the `lists` branch (written
+by the daily `build`) and is deployed by the `pages` workflow on pushes that touch `site/**`.
+
+**One-time setup:** in the repository go to **Settings → Pages → Build and deployment → Source:
+GitHub Actions**. Until that is set, the first `pages` run fails; rerun it afterwards.
+
 ## `build-health` lines
 
 - **`source X failed: ...`**: the download failed. One bad day is normal (the source is optional
@@ -44,6 +53,13 @@ It prints one line per problem (nothing when healthy) and exits with 3 when ther
     **allow_growth** (growth only). A real drop usually means a source broke: see above.
   - The allowlist cap stopped it: see [the security guide](security.md#when-the-allowlist-cap-stops-the-build).
   Routers keep their last good list meanwhile and log `MBL: list is N days old` after a few days.
+- **`warning: lookup.json not published (...)`** (in the run log, not an issue): the data for the
+  [lookup page](https://psycomy.github.io/MikroBlockList/) was skipped; the lists were still
+  published. `lookup.json` is then absent from the `lists` branch until the next good build, and the page shows "list unavailable". The reason is in the parentheses; once the cause is gone, rerun the `build` workflow to fix it.
+- **`warning: DB-IP unavailable (...); lookup.json without countries`**: the DB-IP Country Lite
+  file (CC BY 4.0, cached monthly in Actions by `python -m mbl dbip-fetch --cache .dbip`) was
+  missing or unreadable. The page works but shows no countries. Rerun the `build` workflow; if it
+  persists, check the download URL in `mbl/geo.py`.
 - **`stats.json unavailable`**: the `lists` branch or raw.githubusercontent.com could not be read;
   check that the branch exists and that the latest `build` run published.
 

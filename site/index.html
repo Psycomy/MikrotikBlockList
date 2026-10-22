@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://raw.githubusercontent.com; worker-src 'self'; object-src 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#020812">
+<meta name="description" content="Is this IP on the MikroBlockList blocklist? Check any IPv4, IPv6 or CIDR in your browser.">
+<title>MikroBlockList · ¿Está esta IP en la lista?</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<canvas id="map" aria-hidden="true"></canvas>
+<div class="vignette" aria-hidden="true"></div>
+<div class="scan" aria-hidden="true"></div>
+
+<div class="lang" role="group" data-i18n-attr="aria-label:lang_label">
+  <button type="button" data-lang="es" aria-pressed="false">ES</button>
+  <button type="button" data-lang="en" aria-pressed="false">EN</button>
+</div>
+
+<main>
+  <h1>Mikro<b>Block</b>List</h1>
+  <p class="tag" data-i18n="tagline"></p>
+  <form id="f" role="search" autocomplete="off">
+    <label for="q" class="sr-only" data-i18n="q_label"></label>
+    <input id="q" name="ip" type="text" inputmode="text" spellcheck="false" autocapitalize="off" autocomplete="off" maxlength="100" data-i18n-attr="placeholder:q_placeholder" autofocus>
+    <button id="go" type="submit" data-i18n-attr="aria-label:search;title:search"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg></button>
+  </form>
+  <div class="bar" id="bar"><i></i></div>
+  <div class="status-row">
+    <div class="status" id="st" role="status" aria-live="polite"></div>
+    <button type="button" id="retry" class="retry" hidden data-i18n="retry"></button>
+  </div>
+  <p class="help">
+    <span data-i18n="help"></span>
+    <span data-i18n="try"></span> <button type="button" class="ex">185.220.101.4</button>
+    <span data-i18n="or"></span> <button type="button" class="ex">8.8.8.8</button>.
+  </p>
+  <p class="privacy"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span data-i18n="privacy"></span></p>
+  <div class="result" id="r" aria-live="polite"></div>
+</main>
+
+<aside class="ticker" aria-hidden="true">
+  <div class="tk-head"><span class="tk-dot"></span><span data-i18n="ticker_label"></span></div>
+  <div class="tk-note" data-i18n="ticker_note"></div>
+  <ul id="ticker-list"></ul>
+</aside>
+
+<footer class="foot">
+  <div id="foot-counts"></div>
+  <div class="foot-links">
+    <span class="fl"><a href="https://db-ip.com" rel="noopener" data-i18n="dbip"></a><span id="dbip-month"></span></span>
+    <span class="fl"><span class="sep">·</span><button type="button" id="src-open" class="linkbtn" aria-haspopup="dialog" data-i18n="sources_link"></button></span>
+    <span class="fl"><span class="sep">·</span><span data-i18n="license"></span></span>
+    <span class="fl"><span class="sep">·</span><a href="https://github.com/Psycomy/MikroBlockList" rel="noopener" data-i18n="repo"></a></span>
+    <span class="fl"><span class="sep">·</span><a href="https://github.com/Psycomy/MikroBlockList#readme" rel="noopener" data-i18n="readme"></a></span>
+  </div>
+</footer>
+
+<dialog id="sources" class="sources" aria-labelledby="src-title">
+ <div class="dlg-in">
+  <div class="dlg-head">
+    <h2 id="src-title" data-i18n="sources_title"></h2>
+    <button type="button" class="dlg-close" data-i18n-attr="aria-label:close;title:close"><span aria-hidden="true">×</span></button>
+  </div>
+  <p class="dlg-intro" data-i18n="sources_intro"></p>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr>
+        <th scope="col" data-i18n="th_source"></th>
+        <th scope="col" data-i18n="th_category"></th>
+        <th scope="col" data-i18n="th_entries"></th>
+        <th scope="col" data-i18n="th_terms"></th>
+        <th scope="col" data-i18n="th_notice"></th>
+      </tr></thead>
+      <tbody id="src-body"></tbody>
+    </table>
+  </div>
+ </div>
+</dialog>
+
+<script src="vendor/d3-array.min.js"></script>
+<script src="vendor/d3-geo.min.js"></script>
+<script src="vendor/topojson-client.min.js"></script>
+<script type="module" src="js/search.js"></script>
+</body>
+</html>

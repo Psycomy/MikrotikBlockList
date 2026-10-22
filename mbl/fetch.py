@@ -18,6 +18,7 @@ class SourceResult:
     networks: list[IPv4Network | IPv6Network] = field(default_factory=list)
     invalid: int = 0
     error: str | None = None
+    notice: str = ""
 
 
 def _retryable(exc: Exception) -> bool:
@@ -47,7 +48,7 @@ def _fetch_one(source: Source, timeout: float, retries: int, backoff: float) -> 
         return SourceResult(source, error=f"{type(exc).__name__}: {exc}")
     if not parsed.networks:
         return SourceResult(source, invalid=parsed.invalid, error="no valid entries")
-    return SourceResult(source, parsed.networks, parsed.invalid)
+    return SourceResult(source, parsed.networks, parsed.invalid, notice=parsed.notice)
 
 
 def fetch_all(sources: list[Source], timeout: float = 30, retries: int = 2,

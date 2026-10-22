@@ -29,6 +29,15 @@ def _cell(value: str) -> str:
     return value.replace("|", "\\|").replace("\n", " ")
 
 
+def source_notice(result: SourceResult, fetched_at: str) -> str:
+    """Copyright/date notice to show for a source, with a Spamhaus fallback."""
+    if result.notice:
+        return result.notice
+    if result.source.name.startswith("spamhaus"):
+        return f"(c) The Spamhaus Project SLU (fetched {fetched_at})"
+    return ""
+
+
 def _notice(results: list[SourceResult], stamp: str) -> str:
     lines = [
         "# MikroBlockList - data notice",
@@ -47,14 +56,14 @@ def _notice(results: list[SourceResult], stamp: str) -> str:
         "",
         f"Build: {stamp}",
         "",
-        "| source | url | category | license / terms | variants | entries | entries6 | error |",
-        "|---|---|---|---|---|---|---|---|",
+        "| source | url | category | license / terms | variants | entries | entries6 | error | Notice |",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
     for r in results:
         s = r.source
         entries = sum(1 for n in r.networks if n.version == 4)
         cells = [s.name, s.url, s.category, s.license_note, ", ".join(s.variants),
-                 str(entries), str(len(r.networks) - entries), r.error or ""]
+                 str(entries), str(len(r.networks) - entries), r.error or "", source_notice(r, stamp)]
         lines.append("| " + " | ".join(_cell(c) for c in cells) + " |")
     return "\n".join(lines) + "\n"
 

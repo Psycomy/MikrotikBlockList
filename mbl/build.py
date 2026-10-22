@@ -12,6 +12,8 @@ from pathlib import Path
 from mbl.cdn import DEFAULT_SNAPSHOT, CdnResult, fetch_cdn
 from mbl.checks import LIMITS, LIMITS6, MAX_DROP, safety_errors
 from mbl.fetch import USER_AGENT, SourceResult, fetch_all
+from mbl.geo import CountryDb
+from mbl.lookup import lookup_data, write_lookup
 from mbl.normalize import normalize, normalize6
 from mbl.render import ipv6_files, write_outputs
 from mbl.sources import VARIANTS, load_allowlist, load_sources
@@ -159,7 +161,7 @@ def build(sources_path: Path, allowlist_path: Path, out_dir: Path,
           previous_stats_url: str | None, now: datetime | None = None,
           fetcher=fetch_all, allow_growth: bool = False,
           version_path: Path = Path("VERSION"), cdn_fetcher=None,
-          cdn_snapshot: Path = DEFAULT_SNAPSHOT) -> int:
+          cdn_snapshot: Path = DEFAULT_SNAPSHOT, dbip_path: Path | None = None) -> int:
     """Return 0 on success, 1 if safety checks fail, 2 on configuration errors."""
     try:
         sources = load_sources(Path(sources_path))
@@ -260,4 +262,21 @@ def build(sources_path: Path, allowlist_path: Path, out_dir: Path,
     write_outputs(Path(out_dir), variants, results, now, script_version, variants6,
                   ipv6_baseline=baseline6, files6=files6,
                   cdn_info={**cdn.info, "cap": cap})
+    # The lookup page data is best effort: without DB-IP it has no countries, and
+    # any other failure only skips lookup.json (removing a stale one).
+    geo = None
+    if dbip_path:
+        try:
+            geo = CountryDb.load(dbip_path)
+        except Exception as exc:
+            print(f"warning: DB-IP unavailable ({type(exc).__name__}: {exc}); "
+                  "lookup.json without countries", file=sys.stderr)
+    try:
+        write_lookup(Path(out_dir), lookup_data(variants, variants6, results, now, geo))
+    except Exception as exc:
+        print(f"warning: lookup.json not published ({type(exc).__name__}: {exc})", file=sys.stderr)
+        try:
+            (Path(out_dir) / "lookup.json").unlink(missing_ok=True)
+        except OSError as err:
+            print(f"warning: stale lookup.json not removed ({err})", file=sys.stderr)
     return 0
