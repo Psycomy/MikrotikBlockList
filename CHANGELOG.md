@@ -5,6 +5,21 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/). The version in use is in [`VERSION`](VERSION), and the
 published list carries it as `script=<version>` in its header.
 
+## [3.4.0] - 2026-10-22
+
+### Changed
+- Project renamed from MikrotikBlockList to **MikroBlockList** (repository
+  `Psycomy/MikroBlockList`), so the name no longer uses the MikroTik trademark. GitHub redirects the
+  old URLs, so routers already installed keep updating; reinstall to store the new URL.
+- The installer accepts list headers starting with `# MikroBlockList ` as well as
+  `# MikrotikBlockList `. Published lists keep the old header until 2027-04-30 so routers on
+  script 3.3.2 or older keep loading them.
+- The legacy v2 `blocklist.rsc` keeps its `# MikrotikBlockList v2` first line too: the v2 updater
+  rejects the file without it.
+
+### Added
+- Trademark notice (not affiliated with MikroTik) in the README and NOTICE.md.
+
 ## [3.3.2] - 2026-10-22
 
 ### Fixed

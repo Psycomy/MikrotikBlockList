@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-labelledby="title desc">
-  <title id="title">MikrotikBlockList</title>
+  <title id="title">MikroBlockList</title>
   <desc id="desc">A shield protecting a router, with the project name and the tagline: daily threat blocklist for RouterOS v7.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
@@ -82,7 +82,7 @@
 
   <!-- text -->
   <g font-family="'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif">
-    <text x="330" y="138" font-size="66" font-weight="700" fill="#f8fafc" letter-spacing="-1">Mikrotik<tspan fill="#f87171">BlockList</tspan></text>
+    <text x="330" y="138" font-size="66" font-weight="700" fill="#f8fafc" letter-spacing="-1">Mikro<tspan fill="#f87171">BlockList</tspan></text>
     <rect x="332" y="160" width="220" height="5" rx="2.5" fill="url(#accent)"/>
     <text x="330" y="208" font-size="27" fill="#cbd5e1">Daily threat blocklist for RouterOS v7 firewalls</text>
     <text x="330" y="246" font-size="19" fill="#64748b" letter-spacing="1">PUBLIC THREAT FEEDS  ·  RAW FIREWALL  ·  ONE-LINE INSTALL</text>

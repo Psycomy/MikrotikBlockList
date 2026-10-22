@@ -43,7 +43,7 @@ from tests.e2e.harness import Chr, ChrError, TlsServer, ensure_image
 REPO = Path(__file__).resolve().parents[2]
 ROUTEROS = REPO / "routeros"
 DEFAULT_HOST = "raw.githubusercontent.com"
-DEFAULT_URL = f"https://{DEFAULT_HOST}/Psycomy/MikrotikBlockList/lists/routeros-full.txt"
+DEFAULT_URL = f"https://{DEFAULT_HOST}/Psycomy/MikroBlockList/lists/routeros-full.txt"
 UNREACHABLE = "192.0.2.1"  # TEST-NET-1 (RFC 5737)
 DNS_COMMENT = "MBLTEST"
 TEST_CA_CN = "MBL Test CA"
@@ -187,6 +187,9 @@ class RouterOsTest(unittest.TestCase):
                 footer.replace(f"entries={LIST_SIZE}", f"entries={wrong}"))
         variant("routeros-full-crlf.txt", header,
                 [ln + (" " if i < 10 else "") for i, ln in enumerate(body)], footer, "\r\n")
+        assert header.startswith("# MikrotikBlockList v3 "), header
+        variant("routeros-full-newname.txt",
+                header.replace("# MikrotikBlockList v3 ", "# MikroBlockList v3 ", 1), body, footer)
         variant("routeros-full-invalid.txt", header,
                 body + [f"bad-line-{i}" for i in range(LIST_SIZE // 50)], footer)
         lite_text = (served / "routeros-lite.txt").read_text()
@@ -837,6 +840,19 @@ class RouterOsTest(unittest.TestCase):
         finally:
             self.restore_path(name)
 
+    def test_13b_new_project_name_header_accepted(self):
+        name = "routeros-full-newname.txt"
+        self.serve_variant(name)
+        try:
+            old = self.active_list()
+            token = self.mark()
+            self.update()
+            self.assertNotEqual(self.active_list(), old)
+            self.assertEqual(self.count(self.active_list()), LIST_SIZE)
+            self.assertIn(f"MBL: loaded {LIST_SIZE} entries", self.log_after(token))
+        finally:
+            self.restore_path(name)
+
     def test_14_too_many_invalid_rejected(self):
         name = "routeros-full-invalid.txt"
         self.serve_variant(name)
@@ -871,7 +887,7 @@ class RouterOsTest(unittest.TestCase):
         self.assertIn(
             f"MBL: script {_MAJOR + 1}.0.0 available (installed {self.installed_version}) - "
             'reinstall: /tool fetch url="https://raw.githubusercontent.com/Psycomy/'
-            'MikrotikBlockList/main/routeros/install.rsc" check-certificate=yes; '
+            'MikroBlockList/main/routeros/install.rsc" check-certificate=yes; '
             "/import install.rsc", msg)
 
     def test_14c_no_notice_when_not_newer(self):

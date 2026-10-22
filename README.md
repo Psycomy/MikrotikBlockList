@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.svg" alt="MikrotikBlockList: daily threat blocklist for RouterOS v7 firewalls" width="100%">
+  <img src="docs/assets/banner.svg" alt="MikroBlockList: daily threat blocklist for RouterOS v7 firewalls" width="100%">
 </p>
 
 <p align="center">
@@ -7,10 +7,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Psycomy/MikrotikBlockList/actions/workflows/build.yml"><img src="https://github.com/Psycomy/MikrotikBlockList/actions/workflows/build.yml/badge.svg" alt="build"></a>
-  <a href="https://github.com/Psycomy/MikrotikBlockList/actions/workflows/routeros-e2e.yml"><img src="https://github.com/Psycomy/MikrotikBlockList/actions/workflows/routeros-e2e.yml/badge.svg" alt="routeros e2e"></a>
-  <a href="https://github.com/Psycomy/MikrotikBlockList/tree/lists"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/lists/badge-entries.json" alt="entries"></a>
-  <a href="https://github.com/Psycomy/MikrotikBlockList/tree/lists"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/lists/badge-updated.json" alt="last update"></a>
+  <a href="https://github.com/Psycomy/MikroBlockList/actions/workflows/build.yml"><img src="https://github.com/Psycomy/MikroBlockList/actions/workflows/build.yml/badge.svg" alt="build"></a>
+  <a href="https://github.com/Psycomy/MikroBlockList/actions/workflows/routeros-e2e.yml"><img src="https://github.com/Psycomy/MikroBlockList/actions/workflows/routeros-e2e.yml/badge.svg" alt="routeros e2e"></a>
+  <a href="https://github.com/Psycomy/MikroBlockList/tree/lists"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Psycomy/MikroBlockList/lists/badge-entries.json" alt="entries"></a>
+  <a href="https://github.com/Psycomy/MikroBlockList/tree/lists"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Psycomy/MikroBlockList/lists/badge-updated.json" alt="last update"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="license GPL-3.0"></a>
   <img src="https://img.shields.io/badge/RouterOS-v7.21%2B-orange" alt="RouterOS v7.21+">
 </p>
@@ -59,7 +59,7 @@ Two families (IPv4, optional IPv6) times two variants (`full`, `lite`).
    ticked, which skips only the 2x check (locally: `python -m mbl build --allow-growth`).
    If either variant fails, nothing is published. A drop no larger than the previous entries of
    optional sources that failed this run is accepted with a warning (only the drop check is skipped).
-3. The result goes to the orphan [`lists`](https://github.com/Psycomy/MikrotikBlockList/tree/lists)
+3. The result goes to the orphan [`lists`](https://github.com/Psycomy/MikroBlockList/tree/lists)
    branch, overwritten each time with a single commit.
 4. Your router fetches `routeros-full.txt` (or `routeros-lite.txt`) over HTTPS (`check-certificate=yes`), reads it as plain
    data, validates every line and adds the addresses to an address list that `/ip firewall raw`
@@ -83,10 +83,10 @@ Two families (IPv4, optional IPv6) times two variants (`full`, `lite`).
 Paste this into the RouterOS terminal (Winbox, WebFig or SSH):
 
 ```routeros
-/tool fetch url="https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/main/routeros/install.rsc" check-certificate=yes; /import install.rsc
+/tool fetch url="https://raw.githubusercontent.com/Psycomy/MikroBlockList/main/routeros/install.rsc" check-certificate=yes; /import install.rsc
 ```
 
-It prints `MBL: installed (script 3.3.2, variant full, ipv6 no)` when the first list is loaded (about 20 seconds). The installer is
+It prints `MBL: installed (script 3.4.0, variant full, ipv6 no)` when the first list is loaded (about 20 seconds). The installer is
 idempotent: run it again at any time to upgrade or repair; nothing is duplicated and your
 allowlist is kept.
 
@@ -100,7 +100,7 @@ allowlist is kept.
 To install `lite`, put `:global mblVariant "lite"; ` in front of the one-liner:
 
 ```routeros
-:global mblVariant "lite"; /tool fetch url="https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/main/routeros/install.rsc" check-certificate=yes; /import install.rsc
+:global mblVariant "lite"; /tool fetch url="https://raw.githubusercontent.com/Psycomy/MikroBlockList/main/routeros/install.rsc" check-certificate=yes; /import install.rsc
 ```
 
 - The choice is kept when you reinstall: with `mblVariant` empty, the installer reuses the variant
@@ -109,7 +109,7 @@ To install `lite`, put `:global mblVariant "lite"; ` in front of the one-liner:
 - The global lives until the router reboots, so if you reinstall in the same session, set it
   explicitly (`"full"`, `"lite"`, or `""` to keep what is installed).
 - Any value other than `full` or `lite` stops the installer before it changes anything.
-- The final message tells you which one is installed: `MBL: installed (script 3.3.2, variant lite, ipv6 no)`.
+- The final message tells you which one is installed: `MBL: installed (script 3.4.0, variant lite, ipv6 no)`.
 - A downloaded list whose header says another variant is rejected (`bad header`).
 
 ### Optional IPv6
@@ -118,7 +118,7 @@ IPv6 is **off by default**. To block IPv6 attackers too, put `:global mblIpv6 tr
 the one-liner (it combines with `:global mblVariant "lite"; `):
 
 ```routeros
-:global mblIpv6 true; /tool fetch url="https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/main/routeros/install.rsc" check-certificate=yes; /import install.rsc
+:global mblIpv6 true; /tool fetch url="https://raw.githubusercontent.com/Psycomy/MikroBlockList/main/routeros/install.rsc" check-certificate=yes; /import install.rsc
 ```
 
 - It adds the IPv6 address lists `mbl6-a`, `mbl6-b` and `mbl6-allow`, the same six `MBL:` rules in
@@ -130,7 +130,7 @@ the one-liner (it combines with `:global mblVariant "lite"; `):
 - Any value other than `true` or `false` stops the installer before it changes anything.
 - The global lives until the router reboots, so set it explicitly (`true`, `false`, or `""` to keep
   what is installed) when you reinstall in the same session.
-- The final message tells you the state: `MBL: installed (script 3.3.2, variant full, ipv6 yes)`.
+- The final message tells you the state: `MBL: installed (script 3.4.0, variant full, ipv6 yes)`.
 - Add your own IPv6 exceptions the same way as for IPv4:
   `/ipv6 firewall address-list add list=mbl6-allow address=2001:db8::/32 comment="my office"`.
 - **Best effort:** IPv6 never blocks IPv4. If the IPv6 list fails its checks on the build, no IPv6
@@ -275,7 +275,7 @@ public DNS only).
 ## Uninstall
 
 ```routeros
-/tool fetch url="https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/main/routeros/uninstall.rsc" check-certificate=yes; /import uninstall.rsc
+/tool fetch url="https://raw.githubusercontent.com/Psycomy/MikroBlockList/main/routeros/uninstall.rsc" check-certificate=yes; /import uninstall.rsc
 ```
 
 It removes only what the installer created (`mbl-*` names, `MBL:` comments, `mbl-*.rsc` / `mbl-*.txt` files and
@@ -323,7 +323,7 @@ goes to the projects listed.
 
 ## Published files
 
-The [`lists`](https://github.com/Psycomy/MikrotikBlockList/tree/lists) branch contains:
+The [`lists`](https://github.com/Psycomy/MikroBlockList/tree/lists) branch contains:
 
 | File | Content |
 |---|---|
@@ -335,7 +335,7 @@ The [`lists`](https://github.com/Psycomy/MikrotikBlockList/tree/lists) branch co
 | `routeros6-full.txt`, `routeros6-lite.txt` | IPv6 lists in the router format (`family=ipv6` in the header); only IPv6 routers download them. Not published on a day when IPv6 fails its checks |
 | `blocklist6.txt`, `blocklist6-lite.txt` | Plain IPv6 lists (`full` / `lite`), one address or CIDR per line (`/128` without mask), for other firewalls |
 | `stats.json` | Generation time, total (`full`), `variants` (total of `full` and `lite`), `ipv6` (`published` and totals per variant), `cdn_allowlist` (per provider: `source`, `prefixes4`, `prefixes6`), and per-source IPv4 `entries`, IPv6 `entries6` and errors |
-| [`NOTICE.md`](https://github.com/Psycomy/MikrotikBlockList/blob/lists/NOTICE.md) | Attribution: every source used in that build, its URL, terms and entry count |
+| [`NOTICE.md`](https://github.com/Psycomy/MikroBlockList/blob/lists/NOTICE.md) | Attribution: every source used in that build, its URL, terms and entry count |
 | `badge-entries.json`, `badge-updated.json` | shields.io endpoints for the badges above |
 
 <details>
@@ -425,8 +425,8 @@ The RouterOS installer is also tested end to end on a disposable CHR (`MBL_E2E=1
 
 - [`docs/security.md`](docs/security.md): threat model, what to configure on GitHub, and how to report a vulnerability privately.
 - Wrongly blocked address or a bug? Use the issue forms:
-  [false positive](https://github.com/Psycomy/MikrotikBlockList/issues/new?template=false_positive.yml) or
-  [bug report](https://github.com/Psycomy/MikrotikBlockList/issues/new?template=bug.yml).
+  [false positive](https://github.com/Psycomy/MikroBlockList/issues/new?template=false_positive.yml) or
+  [bug report](https://github.com/Psycomy/MikroBlockList/issues/new?template=bug.yml).
 - Reinstalling is safe and has no gap: the old `MBL:` rules are renamed `MBL-OLD:` and removed
   only after the new ones exist.
 - A reinstall never races an update: the installer stops with `MBL: an update is running
@@ -441,14 +441,18 @@ The RouterOS installer is also tested end to end on a disposable CHR (`MBL_E2E=1
 
 [GPL-3.0](LICENSE) covers **the code only** (generator, workflow and RouterOS scripts).
 The blocklist data is compiled from third-party sources and remains under each source's own
-terms, not under the GPL-3.0. Per-build attribution: [`NOTICE.md`](https://github.com/Psycomy/MikrotikBlockList/blob/lists/NOTICE.md) on the `lists` branch
+terms, not under the GPL-3.0. Per-build attribution: [`NOTICE.md`](https://github.com/Psycomy/MikroBlockList/blob/lists/NOTICE.md) on the `lists` branch
 (see also [Sources and licenses](#sources-and-licenses)).
+
+**Trademarks:** MikroBlockList is an independent project, not affiliated with, endorsed by or
+sponsored by MikroTik. MikroTik and RouterOS are trademarks of SIA Mikrotīkls; they are used here
+only to describe the routers this project works with.
 
 ---
 
 ## 🇪🇸 Español
 
-**MikrotikBlockList** genera cada día una lista IPv4 (e IPv6, opcional) de atacantes y servidores C2 de botnets a
+**MikroBlockList** genera cada día una lista IPv4 (e IPv6, opcional) de atacantes y servidores C2 de botnets a
 partir de fuentes públicas, y la bloquea en el firewall *raw* de tu router MikroTik (RouterOS v7).
 
 > [!WARNING]
@@ -469,7 +473,7 @@ libres con una lista y nunca menos de 30,5 MiB durante una actualización (dos l
 ### Instalación
 
 ```routeros
-/tool fetch url="https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/main/routeros/install.rsc" check-certificate=yes; /import install.rsc
+/tool fetch url="https://raw.githubusercontent.com/Psycomy/MikroBlockList/main/routeros/install.rsc" check-certificate=yes; /import install.rsc
 ```
 
 Crea seis reglas `MBL:` arriba del todo en `/ip firewall raw`, las listas alternas `mbl-a` / `mbl-b`,
@@ -494,7 +498,7 @@ poca RAM o si solo quieres bloquear C2 y los rangos de ataque más graves. Para 
 `:global mblVariant "lite"; ` delante del comando de instalación:
 
 ```routeros
-:global mblVariant "lite"; /tool fetch url="https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/main/routeros/install.rsc" check-certificate=yes; /import install.rsc
+:global mblVariant "lite"; /tool fetch url="https://raw.githubusercontent.com/Psycomy/MikroBlockList/main/routeros/install.rsc" check-certificate=yes; /import install.rsc
 ```
 
 - La elección se conserva al reinstalar: con `mblVariant` vacía, el instalador usa la variante del
@@ -503,7 +507,7 @@ poca RAM o si solo quieres bloquear C2 y los rangos de ataque más graves. Para 
 - La global dura hasta que el router se reinicia; si reinstalas en la misma sesión, defínela de forma
   explícita (`"full"`, `"lite"` o `""` para conservar lo instalado).
 - Cualquier valor distinto de `full` o `lite` detiene el instalador antes de cambiar nada.
-- El mensaje final indica la variante: `MBL: installed (script 3.3.2, variant lite, ipv6 no)`.
+- El mensaje final indica la variante: `MBL: installed (script 3.4.0, variant lite, ipv6 no)`.
 - Una lista descargada con otra `variant=` en la cabecera se rechaza (`bad header`).
 - Límites de publicación: `full` 5.000 a 150.000 entradas, `lite` 1.000 a 20.000; si falla cualquiera
   de las dos, no se publica nada. Tamaño mínimo del fichero en el router: 100.000 bytes (`full`) y
@@ -522,7 +526,7 @@ Viene **desactivado**. Para bloquear también atacantes IPv6, pon
 `:global mblIpv6 true; ` delante del comando de instalación (se combina con `:global mblVariant "lite"; `):
 
 ```routeros
-:global mblIpv6 true; /tool fetch url="https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/main/routeros/install.rsc" check-certificate=yes; /import install.rsc
+:global mblIpv6 true; /tool fetch url="https://raw.githubusercontent.com/Psycomy/MikroBlockList/main/routeros/install.rsc" check-certificate=yes; /import install.rsc
 ```
 
 - Añade las listas IPv6 `mbl6-a`, `mbl6-b` y `mbl6-allow`, las mismas seis reglas `MBL:` en
@@ -534,7 +538,7 @@ Viene **desactivado**. Para bloquear también atacantes IPv6, pon
 - Cualquier valor distinto de `true` o `false` detiene el instalador antes de cambiar nada.
 - La global dura hasta que el router se reinicia; si reinstalas en la misma sesión, defínela de forma
   explícita (`true`, `false` o `""` para conservar lo instalado).
-- El mensaje final indica el estado: `MBL: installed (script 3.3.2, variant full, ipv6 yes)`.
+- El mensaje final indica el estado: `MBL: installed (script 3.4.0, variant full, ipv6 yes)`.
 - Tus excepciones IPv6 van igual que las de IPv4:
   `/ipv6 firewall address-list add list=mbl6-allow address=2001:db8::/32 comment="mi oficina"`.
 - **Mejor esfuerzo:** IPv6 nunca bloquea IPv4. Si la lista IPv6 no pasa las comprobaciones en la
@@ -601,8 +605,8 @@ usando, con un aviso para renovarlo. La copia se actualiza a mano con
 
 Modelo de amenaza, ajustes recomendados de GitHub e informe privado de vulnerabilidades:
 [`docs/security.md`](docs/security.md). Para un falso positivo o un fallo usa las plantillas:
-[falso positivo](https://github.com/Psycomy/MikrotikBlockList/issues/new?template=false_positive.yml) y
-[bug](https://github.com/Psycomy/MikrotikBlockList/issues/new?template=bug.yml). Reinstalar no deja
+[falso positivo](https://github.com/Psycomy/MikroBlockList/issues/new?template=false_positive.yml) y
+[bug](https://github.com/Psycomy/MikroBlockList/issues/new?template=bug.yml). Reinstalar no deja
 huecos: las reglas `MBL:` viejas pasan a `MBL-OLD:` y se borran cuando ya existen las nuevas. Tampoco
 choca con una actualización: mientras `mbl-update` corre, el instalador se detiene sin cambiar nada
 (`MBL: an update is running (mblRunning is set)`; reinténtalo en un minuto) y, desde su primer
@@ -649,7 +653,7 @@ actives IPv6 (ver [IPv6 opcional](#ipv6-opcional)).
 ### Desinstalación
 
 ```routeros
-/tool fetch url="https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/main/routeros/uninstall.rsc" check-certificate=yes; /import uninstall.rsc
+/tool fetch url="https://raw.githubusercontent.com/Psycomy/MikroBlockList/main/routeros/uninstall.rsc" check-certificate=yes; /import uninstall.rsc
 ```
 
 Borra solo lo que creó el instalador, de las dos familias: con IPv6 también quita las seis reglas
@@ -662,4 +666,8 @@ Registro de pruebas: [docs/testing-chr.md](docs/testing-chr.md). El instalador t
 
 **Licencia:** [GPL-3.0](LICENSE) cubre **solo el código** (generador, workflow y scripts de
 RouterOS). Los datos de la lista proceden de fuentes de terceros y siguen bajo los términos de
-cada fuente, no bajo la GPL-3.0. Atribución de cada build: [`NOTICE.md`](https://github.com/Psycomy/MikrotikBlockList/blob/lists/NOTICE.md) en la rama `lists`.
+cada fuente, no bajo la GPL-3.0. Atribución de cada build: [`NOTICE.md`](https://github.com/Psycomy/MikroBlockList/blob/lists/NOTICE.md) en la rama `lists`.
+
+**Marcas:** MikroBlockList es un proyecto independiente: no está afiliado a MikroTik ni cuenta con su
+respaldo o patrocinio. MikroTik y RouterOS son marcas de SIA Mikrotīkls; aquí se citan solo para
+indicar con qué routers funciona el proyecto.

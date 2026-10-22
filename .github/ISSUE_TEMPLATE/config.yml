@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
   - name: Security vulnerability (private report)
-    url: https://github.com/Psycomy/MikrotikBlockList/security/advisories/new
+    url: https://github.com/Psycomy/MikroBlockList/security/advisories/new
     about: Report a vulnerability privately; see docs/security.md.

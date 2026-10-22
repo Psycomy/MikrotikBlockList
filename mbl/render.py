@@ -7,7 +7,7 @@ from pathlib import Path
 from mbl.fetch import SourceResult
 
 TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
-PROJECT_URL = "https://github.com/Psycomy/MikrotikBlockList"
+PROJECT_URL = "https://github.com/Psycomy/MikroBlockList"
 NOTICE_URL = PROJECT_URL + "/blob/lists/NOTICE.md"
 
 
@@ -17,8 +17,10 @@ def _cidr(net: IPv4Network | IPv6Network) -> str:
 
 
 def _rsc(addresses: list[str], stamp: str) -> str:
+    # v2 routers abort unless the first line starts with "# MikrotikBlockList";
+    # this legacy file keeps the pre-rename name until it is retired (2027-04-30).
     lines = [
-        "# MikrotikBlockList v2 - https://github.com/Psycomy/MikrotikBlockList",
+        "# MikrotikBlockList v2 - https://github.com/Psycomy/MikroBlockList",
         "# For home / non-commercial use only (see source licenses in README)",
         f"# generated: {stamp} entries: {len(addresses)}",
         f"# Sources and terms: {NOTICE_URL}",
@@ -33,6 +35,8 @@ def _rsc(addresses: list[str], stamp: str) -> str:
 def router_txt(addresses: list[str], stamp: str, script_version: str,
                variant: str = "full", family: str = "ipv4") -> str:
     n = len(addresses)
+    # The header keeps the pre-rename project name: routers on script <= 3.3.2 only
+    # accept "# MikrotikBlockList ". Switch to "# MikroBlockList " after 2027-04-30.
     lines = [f"# MikrotikBlockList v3 format=1 variant={variant} family={family} "
              f"generated={stamp} entries={n} script={script_version}"]
     lines += addresses
@@ -46,7 +50,7 @@ def _cell(value: str) -> str:
 
 def _notice(results: list[SourceResult], stamp: str) -> str:
     lines = [
-        "# MikrotikBlockList - data notice",
+        "# MikroBlockList - data notice",
         "",
         f"Project: {PROJECT_URL}",
         "",
@@ -56,6 +60,9 @@ def _notice(results: list[SourceResult], stamp: str) -> str:
         "listed below. The data remains under each source's own license or terms of use;",
         "it is not covered by the GPL-3.0 license of this repository, which applies to",
         "the code only. Check each source's terms before any other use.",
+        "",
+        "MikroBlockList is not affiliated with MikroTik. MikroTik and RouterOS are",
+        "trademarks of SIA Mikrotīkls, used only to describe compatible routers.",
         "",
         f"Build: {stamp}",
         "",
