@@ -86,7 +86,7 @@ Paste this into the RouterOS terminal (Winbox, WebFig or SSH):
 /tool fetch url="https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/main/routeros/install.rsc" check-certificate=yes; /import install.rsc
 ```
 
-It prints `MBL: installed (script 3.3.1, variant full, ipv6 no)` when the first list is loaded (about 20 seconds). The installer is
+It prints `MBL: installed (script 3.3.2, variant full, ipv6 no)` when the first list is loaded (about 20 seconds). The installer is
 idempotent: run it again at any time to upgrade or repair; nothing is duplicated and your
 allowlist is kept.
 
@@ -109,7 +109,7 @@ To install `lite`, put `:global mblVariant "lite"; ` in front of the one-liner:
 - The global lives until the router reboots, so if you reinstall in the same session, set it
   explicitly (`"full"`, `"lite"`, or `""` to keep what is installed).
 - Any value other than `full` or `lite` stops the installer before it changes anything.
-- The final message tells you which one is installed: `MBL: installed (script 3.3.1, variant lite, ipv6 no)`.
+- The final message tells you which one is installed: `MBL: installed (script 3.3.2, variant lite, ipv6 no)`.
 - A downloaded list whose header says another variant is rejected (`bad header`).
 
 ### Optional IPv6
@@ -130,7 +130,7 @@ the one-liner (it combines with `:global mblVariant "lite"; `):
 - Any value other than `true` or `false` stops the installer before it changes anything.
 - The global lives until the router reboots, so set it explicitly (`true`, `false`, or `""` to keep
   what is installed) when you reinstall in the same session.
-- The final message tells you the state: `MBL: installed (script 3.3.1, variant full, ipv6 yes)`.
+- The final message tells you the state: `MBL: installed (script 3.3.2, variant full, ipv6 yes)`.
 - Add your own IPv6 exceptions the same way as for IPv4:
   `/ipv6 firewall address-list add list=mbl6-allow address=2001:db8::/32 comment="my office"`.
 - **Best effort:** IPv6 never blocks IPv4. If the IPv6 list fails its checks on the build, no IPv6
@@ -503,7 +503,7 @@ poca RAM o si solo quieres bloquear C2 y los rangos de ataque más graves. Para 
 - La global dura hasta que el router se reinicia; si reinstalas en la misma sesión, defínela de forma
   explícita (`"full"`, `"lite"` o `""` para conservar lo instalado).
 - Cualquier valor distinto de `full` o `lite` detiene el instalador antes de cambiar nada.
-- El mensaje final indica la variante: `MBL: installed (script 3.3.1, variant lite, ipv6 no)`.
+- El mensaje final indica la variante: `MBL: installed (script 3.3.2, variant lite, ipv6 no)`.
 - Una lista descargada con otra `variant=` en la cabecera se rechaza (`bad header`).
 - Límites de publicación: `full` 5.000 a 150.000 entradas, `lite` 1.000 a 20.000; si falla cualquiera
   de las dos, no se publica nada. Tamaño mínimo del fichero en el router: 100.000 bytes (`full`) y
@@ -534,7 +534,7 @@ Viene **desactivado**. Para bloquear también atacantes IPv6, pon
 - Cualquier valor distinto de `true` o `false` detiene el instalador antes de cambiar nada.
 - La global dura hasta que el router se reinicia; si reinstalas en la misma sesión, defínela de forma
   explícita (`true`, `false` o `""` para conservar lo instalado).
-- El mensaje final indica el estado: `MBL: installed (script 3.3.1, variant full, ipv6 yes)`.
+- El mensaje final indica el estado: `MBL: installed (script 3.3.2, variant full, ipv6 yes)`.
 - Tus excepciones IPv6 van igual que las de IPv4:
   `/ipv6 firewall address-list add list=mbl6-allow address=2001:db8::/32 comment="mi oficina"`.
 - **Mejor esfuerzo:** IPv6 nunca bloquea IPv4. Si la lista IPv6 no pasa las comprobaciones en la

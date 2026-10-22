@@ -31,19 +31,25 @@ FILES = {"blocklist.rsc", "blocklist.txt", "stats.json",
 
 NO_CDN = CdnResult([], {})
 
+# Production IPv4 limits (full 5000..150000, lite 1000..20000) scaled down 10x, so the
+# fixtures only need hundreds of entries instead of thousands. The checks themselves are
+# unchanged; IPv6 limits are small already and stay as in production.
+TEST_LIMITS = {"full": (500, 15000), "lite": (100, 2000)}
+
 
 def setUpModule():
     # Builds never touch the network for the CDN lists unless a test passes its own.
-    patcher = mock.patch("mbl.build.fetch_cdn", lambda snapshot: NO_CDN)
-    patcher.start()
-    unittest.addModuleCleanup(patcher.stop)
+    for patcher in (mock.patch("mbl.build.fetch_cdn", lambda snapshot: NO_CDN),
+                    mock.patch("mbl.build.LIMITS", TEST_LIMITS)):
+        patcher.start()
+        unittest.addModuleCleanup(patcher.stop)
 
 
 def _nets(count):
     return [IPv4Network(f"1.{i // 256}.{i % 256}.1/32") for i in range(count)]
 
 
-def _fetcher(count=6000, error=None):
+def _fetcher(count=600, error=None):
     def fetch(sources):
         src = sources[0]
         if error:
@@ -67,7 +73,7 @@ def _nets6(count):
     return [IPv6Network(f"2a00:{i:x}::1/128") for i in range(1, count + 1)]
 
 
-def _fetcher6(count6=100, count=6000):
+def _fetcher6(count6=100, count=600):
     def fetch(sources):
         return [SourceResult(sources[0], _nets(count), 0, None),
                 SourceResult(sources[1], _nets6(count6), 0, None)]
@@ -118,14 +124,14 @@ class BuildTest(BuildBase):
     def test_build_unreachable_previous_is_ignored(self):
         self.assertEqual(self._build(_fetcher(), previous="http://127.0.0.1:9/stats.json"), 0)
 
-    @mock.patch("mbl.build._previous_stats", return_value=({"full": 6000, "lite": 6000}, {}))
+    @mock.patch("mbl.build._previous_stats", return_value=({"full": 600, "lite": 600}, {}))
     def test_build_refuses_growth_above_double(self, _prev):
-        self.assertEqual(self._build(_fetcher(count=12001), previous="x"), 1)
+        self.assertEqual(self._build(_fetcher(count=1201), previous="x"), 1)
         self.assertFalse(self.out.exists())
 
-    @mock.patch("mbl.build._previous_stats", return_value=({"full": 6000, "lite": 6000}, {}))
+    @mock.patch("mbl.build._previous_stats", return_value=({"full": 600, "lite": 600}, {}))
     def test_build_allow_growth_publishes(self, _prev):
-        self.assertEqual(self._build(_fetcher(count=12001), previous="x", allow_growth=True), 0)
+        self.assertEqual(self._build(_fetcher(count=1201), previous="x", allow_growth=True), 0)
         self.assertEqual({p.name for p in self.out.iterdir()}, FILES)
 
     def test_build_splits_by_variant(self):
@@ -140,13 +146,13 @@ category = "attack"
 
         def fetch(sources):
             main, extra = sources
-            return [SourceResult(main, _nets(2000), 0, None),
+            return [SourceResult(main, _nets(200), 0, None),
                     SourceResult(extra, [IPv4Network(f"9.{i // 256}.{i % 256}.1/32")
-                                         for i in range(4000)], 0, None)]
+                                         for i in range(400)], 0, None)]
         self.assertEqual(self._build(fetch), 0)
         lite = (self.out / "blocklist-lite.txt").read_text().splitlines()
         full = (self.out / "blocklist.txt").read_text().splitlines()
-        self.assertEqual((len(lite), len(full)), (2000, 6000))
+        self.assertEqual((len(lite), len(full)), (200, 600))
         self.assertTrue(all(line.startswith("1.") for line in lite))
 
     def test_build_refuses_when_lite_fails(self):
@@ -162,9 +168,9 @@ variants = ["lite", "full"]
 
         def fetch(sources):
             main, small = sources
-            return [SourceResult(main, _nets(6000), 0, None),
+            return [SourceResult(main, _nets(600), 0, None),
                     SourceResult(small, [IPv4Network(f"9.0.{i // 256}.{i % 256}/32")
-                                         for i in range(500)], 0, None)]
+                                         for i in range(50)], 0, None)]
         err = io.StringIO()
         with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
             code = build(self.sources, self.allow, self.out, None, now=WHEN,
@@ -173,9 +179,9 @@ variants = ["lite", "full"]
         self.assertFalse(self.out.exists())
         self.assertTrue(err.getvalue().startswith("error: lite:"), err.getvalue())
 
-    @mock.patch("mbl.build._previous_stats", return_value=({"full": 20000}, {}))
+    @mock.patch("mbl.build._previous_stats", return_value=({"full": 2000}, {}))
     def test_first_lite_publish_skips_drop_and_growth(self, _prev):
-        # lite has no previous total; compared against full's 20000, 3000 would be an 85% drop
+        # lite has no previous total; compared against full's 2000, 300 would be an 85% drop
         two = SOURCES_TOML.replace('variants = ["lite", "full"]', 'variants = ["full"]') + """
 [[source]]
 name = "small"
@@ -188,11 +194,11 @@ variants = ["lite", "full"]
 
         def fetch(sources):
             main, small = sources
-            return [SourceResult(main, _nets(12000), 0, None),
+            return [SourceResult(main, _nets(1200), 0, None),
                     SourceResult(small, [IPv4Network(f"9.{i // 256}.{i % 256}.1/32")
-                                         for i in range(3000)], 0, None)]
+                                         for i in range(300)], 0, None)]
         self.assertEqual(self._build(fetch, previous="x"), 0)
-        self.assertEqual(len((self.out / "blocklist-lite.txt").read_text().splitlines()), 3000)
+        self.assertEqual(len((self.out / "blocklist-lite.txt").read_text().splitlines()), 300)
 
     LITE_PAIR = SOURCES_TOML.replace('variants = ["lite", "full"]', 'variants = ["full"]') + """
 [[source]]
@@ -211,14 +217,14 @@ variants = ["lite", "full"]
 """
 
     def _lite_drop(self, previous_stats, b_error="boom"):
-        """full 7500 (prev 10500, -29%); lite 1500 (prev 4500, -67%); lite-b failing."""
+        """full 750 (prev 1050, -29%); lite 150 (prev 450, -67%); lite-b failing."""
         self.sources.write_text(self.LITE_PAIR)
 
         def fetch(sources):
             main, a, b = sources
-            return [SourceResult(main, _nets(6000), 0, None),
+            return [SourceResult(main, _nets(600), 0, None),
                     SourceResult(a, [IPv4Network(f"9.{i // 256}.{i % 256}.1/32")
-                                     for i in range(1500)], 0, None),
+                                     for i in range(150)], 0, None),
                     SourceResult(b, [], 0, b_error)]
         err = io.StringIO()
         with mock.patch("mbl.build._previous_stats", return_value=previous_stats), \
@@ -228,15 +234,15 @@ variants = ["lite", "full"]
         return code, err.getvalue()
 
     def test_drop_explained_by_failed_optional_source_publishes(self):
-        code, err = self._lite_drop(({"full": 10500, "lite": 4500},
-                                     {"lite-a": 1500, "lite-b": 3000}))
+        code, err = self._lite_drop(({"full": 1050, "lite": 450},
+                                     {"lite-a": 150, "lite-b": 300}))
         self.assertEqual(code, 0, err)
         self.assertTrue((self.out / "blocklist-lite.txt").exists())
-        self.assertIn("lite: drop of 3000 explained by failed sources (lite-b), "
+        self.assertIn("lite: drop of 300 explained by failed sources (lite-b), "
                       "drop check skipped", err)
 
     def test_failed_optional_source_without_previous_lite_total(self):
-        code, err = self._lite_drop(({"full": 10500}, {"lite-a": 1500, "lite-b": 3000}))
+        code, err = self._lite_drop(({"full": 1050}, {"lite-a": 150, "lite-b": 300}))
         self.assertEqual(code, 0, err)
         self.assertTrue((self.out / "blocklist-lite.txt").exists())
 
@@ -246,22 +252,22 @@ variants = ["lite", "full"]
         self.assertTrue((self.out / "blocklist-lite.txt").exists())
 
     def test_drop_larger_than_explained_refuses(self):
-        code, err = self._lite_drop(({"full": 10500, "lite": 4500},
-                                     {"lite-a": 1500, "lite-b": 2999}))
+        code, err = self._lite_drop(({"full": 1050, "lite": 450},
+                                     {"lite-a": 150, "lite-b": 299}))
         self.assertEqual(code, 1)
         self.assertFalse(self.out.exists())
         self.assertIn("error: lite:", err)
 
     def test_drop_without_failed_sources_refuses(self):
-        code, err = self._lite_drop(({"full": 10500, "lite": 4500},
-                                     {"lite-a": 1500, "lite-b": 3000}), b_error=None)
+        code, err = self._lite_drop(({"full": 1050, "lite": 450},
+                                     {"lite-a": 150, "lite-b": 300}), b_error=None)
         self.assertEqual(code, 1)
         self.assertFalse(self.out.exists())
         self.assertIn("error: lite:", err)
         self.assertNotIn("error: full:", err)
 
     def test_drop_without_previous_source_entries_refuses(self):
-        code, err = self._lite_drop(({"full": 10500, "lite": 4500}, {}))
+        code, err = self._lite_drop(({"full": 1050, "lite": 450}, {}))
         self.assertEqual(code, 1)
         self.assertIn("error: lite:", err)
 
@@ -278,7 +284,7 @@ required = true
 
         def fetch(sources):
             main, big = sources
-            return [SourceResult(main, _nets(6000), 0, None), SourceResult(big, [], 0, "boom")]
+            return [SourceResult(main, _nets(600), 0, None), SourceResult(big, [], 0, "boom")]
         err = io.StringIO()
         with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
             code = build(self.sources, self.allow, self.out, None, now=WHEN,
@@ -356,7 +362,7 @@ required = true
         self.assertEqual({p.name for p in self.out.iterdir()}, FILES)
 
     @mock.patch("mbl.build._previous_stats", return_value=(
-        {"full": 6000, "lite": 6000, "ipv6:full": 100, "ipv6:lite": 100}, {}))
+        {"full": 600, "lite": 600, "ipv6:full": 100, "ipv6:lite": 100}, {}))
     def test_ipv6_drop_and_growth_withhold_ipv6_only(self, _prev):
         self.sources.write_text(SOURCES6_TOML)
         self.assertEqual(self._build(_fetcher6(count6=40), previous="x"), 0)
@@ -365,7 +371,7 @@ required = true
         self.assertEqual({p.name for p in self.out.iterdir()}, FILES)
 
     @mock.patch("mbl.build._previous_stats", return_value=(
-        {"full": 6000, "lite": 6000, "ipv6:full": 100, "ipv6:lite": 100},
+        {"full": 600, "lite": 600, "ipv6:full": 100, "ipv6:lite": 100},
         {"v6": 50, "ipv6:v6": 60}))
     def test_ipv6_explained_drop_uses_ipv6_entries(self, _prev):
         self.sources.write_text(SOURCES6_TOML + """
@@ -378,7 +384,7 @@ variants = ["lite", "full"]
 """)
 
         def fetch(sources):
-            return [SourceResult(sources[0], _nets(6000), 0, None),
+            return [SourceResult(sources[0], _nets(600), 0, None),
                     SourceResult(sources[1], _nets6(40), 0, None),
                     SourceResult(sources[2], [], 0, "boom")]
         # v6b is missing from previous entries -> explains 0 -> 100 -> 40 is a >50% drop
@@ -386,7 +392,7 @@ variants = ["lite", "full"]
         self.assertEqual({p.name for p in self.out.iterdir()}, FILES)
 
     @mock.patch("mbl.build._previous_stats", return_value=(
-        {"full": 6000, "lite": 6000, "ipv6:full": 200, "ipv6:lite": 200},
+        {"full": 600, "lite": 600, "ipv6:full": 200, "ipv6:lite": 200},
         {"v6b": 150, "ipv6:v6b": 150, "ipv6:v6": 50}))
     def test_ipv6_explained_drop_publishes(self, _prev):
         self.sources.write_text(SOURCES6_TOML + """
@@ -399,7 +405,7 @@ variants = ["lite", "full"]
 """)
 
         def fetch(sources):
-            return [SourceResult(sources[0], _nets(6000), 0, None),
+            return [SourceResult(sources[0], _nets(600), 0, None),
                     SourceResult(sources[1], _nets6(60), 0, None),
                     SourceResult(sources[2], [], 0, "boom")]
         # 200 -> 60 is a >50% drop, explained by v6b's 150 previous IPv6 entries
@@ -412,13 +418,13 @@ variants = ["lite", "full"]
         stats = json.loads((self.out / "stats.json").read_text())
         self.assertEqual(stats["ipv6"], {"published": True, "variants": {
             "full": {"total": 100}, "lite": {"total": 100}}})
-        self.assertEqual(stats["sources"]["main"]["entries"], 6000)
+        self.assertEqual(stats["sources"]["main"]["entries"], 600)
         self.assertEqual(stats["sources"]["main"]["entries6"], 0)
         self.assertEqual(stats["sources"]["v6"]["entries"], 0)
         self.assertEqual(stats["sources"]["v6"]["entries6"], 100)
         with self._stats(stats):
             totals, entries = _previous_stats("http://x")
-        self.assertEqual(totals, {"full": 6000, "lite": 6000, "ipv6:full": 100, "ipv6:lite": 100})
+        self.assertEqual(totals, {"full": 600, "lite": 600, "ipv6:full": 100, "ipv6:lite": 100})
         self.assertEqual(entries["ipv6:v6"], 100)
         self.assertEqual(entries["v6"], 0)
 
@@ -527,26 +533,26 @@ class CdnAllowlistTest(BuildBase):
         return self._build(fetcher, cdn_fetcher=lambda snapshot: result, **kwargs)
 
     def test_allowlist_cap_fails_build(self):
-        # 1.0.0.0/14 covers 1024 of the 9000 /32 entries: 11.4 %
-        self.allow.write_text("1.0.0.0/14\n")
-        self.assertEqual(self._build(_fetcher(9000)), 1)
+        # 1.0.0.0/17 covers 128 of the 900 /32 entries: 14.2 %
+        self.allow.write_text("1.0.0.0/17\n")
+        self.assertEqual(self._build(_fetcher(900)), 1)
         self.assertFalse(self.out.exists())
 
     def test_allowlist_under_cap_builds(self):
-        self.allow.write_text("1.0.0.0/15\n")  # 512 of 9000: 5.7 %
-        self.assertEqual(self._build(_fetcher(9000)), 0)
+        self.allow.write_text("1.0.0.0/18\n")  # 64 of 900: 7.1 %
+        self.assertEqual(self._build(_fetcher(900)), 0)
 
     def test_cdn_networks_cap_fails_build(self):
-        result = CdnResult([IPv4Network("1.0.0.0/14")], {})
-        self.assertEqual(self._cdn_build(_fetcher(9000), result), 1)
+        result = CdnResult([IPv4Network("1.0.0.0/17")], {})
+        self.assertEqual(self._cdn_build(_fetcher(900), result), 1)
 
     def test_cdn_networks_are_subtracted(self):
-        result = CdnResult([IPv4Network("1.0.0.0/15"), IPv6Network("2a00:1::/32")], {})
-        self.assertEqual(self._cdn_build(_fetcher(9000), result), 0)
+        result = CdnResult([IPv4Network("1.0.0.0/18"), IPv6Network("2a00:1::/32")], {})
+        self.assertEqual(self._cdn_build(_fetcher(900), result), 0)
         lines = (self.out / "blocklist.txt").read_text().splitlines()
         self.assertNotIn("1.0.0.1", lines)
-        self.assertNotIn("1.1.255.1", lines)
-        self.assertIn("1.2.0.1", lines)
+        self.assertNotIn("1.0.63.1", lines)
+        self.assertIn("1.0.64.1", lines)
 
     def test_allowlist_cap_ipv6_withholds(self):
         self.sources.write_text(SOURCES6_TOML)
@@ -570,7 +576,7 @@ class CdnAllowlistTest(BuildBase):
         return code, err.getvalue()
 
     @staticmethod
-    def _wide_fetcher(count=9000, count6=None):
+    def _wide_fetcher(count=900, count6=None):
         """count /32 entries plus 5.0.0.0/8: almost every address is in the /8."""
         def fetch(sources):
             results = [SourceResult(sources[0], [*_nets(count), IPv4Network("5.0.0.0/8")],
@@ -582,16 +588,16 @@ class CdnAllowlistTest(BuildBase):
         return fetch
 
     def test_allowlist_cap_counts_entries_touched(self):
-        # 1.0.0.0/14 covers 1024 of 9001 entries (11.4 %) but only 0.006 % of the addresses
-        self.allow.write_text("1.0.0.0/14\n")
+        # 1.0.0.0/17 covers 128 of 901 entries (14.2 %) but only 0.0008 % of the addresses
+        self.allow.write_text("1.0.0.0/17\n")
         code, err = self._build_err(self._wide_fetcher())
         self.assertEqual(code, 1)
         self.assertFalse(self.out.exists())
-        self.assertIn("1024 of 9001 entries", err)
-        self.assertIn("1024 of 16786216 addresses", err)
+        self.assertIn("128 of 901 entries", err)
+        self.assertIn("128 of 16778116 addresses", err)
 
     def test_allowlist_cap_counts_partially_covered_entries(self):
-        # 5.0.0.0/24 touches the /8 entry (1 of 9001) and removes 256 of its addresses:
+        # 5.0.0.0/24 touches the /8 entry (1 of 901) and removes 256 of its addresses:
         # under the cap on both measures, so the build publishes
         self.allow.write_text("5.0.0.0/24\n")
         code, _ = self._build_err(self._wide_fetcher())
@@ -618,16 +624,16 @@ class CdnAllowlistTest(BuildBase):
         info = {"cloudflare": {"source": "live", "prefixes4": 15, "prefixes6": 7},
                 "fastly": {"source": "snapshot", "prefixes4": 21, "prefixes6": 3},
                 "cloudfront": {"source": "missing", "prefixes4": 0, "prefixes6": 0}}
-        self.allow.write_text("1.0.0.0/16\n")  # 256 of the 6000 /32 entries
+        self.allow.write_text("1.0.0.0/19\n")  # 32 of the 600 /32 entries
         self.assertEqual(self._cdn_build(_fetcher(), CdnResult([], info)), 0)
         stats = json.loads((self.out / "stats.json").read_text())
         cdn_stats = dict(stats["cdn_allowlist"])
         cap = cdn_stats.pop("cap")
         self.assertEqual(cdn_stats, info)
         self.assertEqual(cap["limit_pct"], 10.0)
-        self.assertEqual(cap["ipv4"], {"addresses": 6000, "addresses_removed": 256,
-                                       "addresses_pct": 4.27, "entries": 6000,
-                                       "entries_touched": 256, "entries_pct": 4.27})
+        self.assertEqual(cap["ipv4"], {"addresses": 600, "addresses_removed": 32,
+                                       "addresses_pct": 5.33, "entries": 600,
+                                       "entries_touched": 32, "entries_pct": 5.33})
 
     def test_cdn_warnings_go_to_step_summary(self):
         summary = self.tmp / "summary.md"
