@@ -29,7 +29,7 @@ if [ -s "$problems" ]; then
   if [ -z "$issue" ]; then
     gh issue create --title "$title" --label "$label" --body "$body"
   else
-    current="$(gh issue view "$issue" --json body --jq .body)"
+    current="$(gh issue view "$issue" --json body --jq .body | tr -d '\r')"
     # Compare only the problem lines: the run URL changes every day.
     if [ "$(grep '^- ' <<<"$current" || true)" != "$(sed 's/^/- /' "$problems")" ]; then
       gh issue edit "$issue" --body "$body"

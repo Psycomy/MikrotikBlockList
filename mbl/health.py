@@ -47,8 +47,12 @@ def problems(stats: dict, today: date) -> list[str]:
 
     cdn = stats.get("cdn_allowlist")
     for name, info in (cdn.items() if isinstance(cdn, dict) else []):
-        if name != "cap" and isinstance(info, dict) and info.get("source") != "live":
-            found.append(f"CDN allowlist {name}: live list rejected, used the {info.get('source')}")
+        if name == "cap" or not isinstance(info, dict) or info.get("source") == "live":
+            continue
+        if info.get("source") == "snapshot":
+            found.append(f"CDN allowlist {name}: live list rejected, used the snapshot")
+        else:
+            found.append(f"CDN allowlist {name}: live list rejected and no snapshot, built without it")
 
     ipv6 = stats.get("ipv6")
     if isinstance(ipv6, dict) and ipv6.get("published") is False:

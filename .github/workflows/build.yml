@@ -85,7 +85,7 @@ jobs:
   # Only on the schedule: push and manual runs do not open or close it.
   health:
     needs: publish
-    if: always() && github.event_name == 'schedule'
+    if: ${{ !cancelled() && github.event_name == 'schedule' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -101,14 +101,19 @@ jobs:
       - name: Check the published build
         env:
           PUBLISH_RESULT: ${{ needs.publish.result }}
-          STATS: "https://raw.githubusercontent.com/${{ github.repository }}/lists/stats.json"
+          # The query string skips the raw CDN cache, so today's publish is read.
+          STATS: "https://raw.githubusercontent.com/${{ github.repository }}/lists/stats.json?run=${{ github.run_id }}"
         run: |
           if [ "$PUBLISH_RESULT" != "success" ]; then
-            echo "the build did not publish (publish job: $PUBLISH_RESULT); see the run log" > problems.txt
+            echo "the build did not publish (publish job: $PUBLISH_RESULT; skipped means the tests failed); see the run log" > problems.txt
           else
             : > problems.txt
           fi
-          python -m mbl health --stats "$STATS" >> problems.txt || true
+          # 3 means problems were found; anything else is a crash and fails the job
+          # instead of closing the issue as healthy.
+          rc=0
+          python -m mbl health --stats "$STATS" >> problems.txt || rc=$?
+          if [ "$rc" != 0 ] && [ "$rc" != 3 ]; then exit "$rc"; fi
           cat problems.txt
       - name: Update the build-health issue
         env:

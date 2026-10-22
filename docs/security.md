@@ -29,8 +29,8 @@ Resumen en español al final / Spanish summary at the end.
    a required `e2e` check leaves a docs-only PR waiting forever. Require only `test`, or require
    `e2e` through a ruleset or workflow that treats a skipped check as passing.
 3. **Actions permissions**: default workflow token `read`. Only the `publish` job writes code (the
-   `lists` branch) and the `cdn-snapshot` job pushes only its own `cdn-snapshot-refresh` branch;
-   the `health`, `report` and `cdn-snapshot` jobs may write issues. Keep "Allow GitHub Actions to
+   `lists` branch) and the `cdn-snapshot` workflow pushes only its own `cdn-snapshot-refresh` branch;
+   the `health` and `report` jobs and the `cdn-snapshot` workflow may write issues. Keep "Allow GitHub Actions to
    create and approve pull requests" off: the snapshot refresh is opened as a PR by a person.
    Also limit which workflows may run and who can trigger them:
    <https://github.com/Psycomy/MikroBlockList/settings/actions>.

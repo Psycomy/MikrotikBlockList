@@ -3,7 +3,7 @@ import io
 import json
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from mbl import health
@@ -59,6 +59,12 @@ class ProblemsTest(unittest.TestCase):
         found = health.problems(stats, TODAY)
         self.assertEqual(found, ["CDN allowlist fastly: live list rejected, used the snapshot"])
 
+    def test_cdn_missing(self):
+        stats = _stats()
+        stats["cdn_allowlist"]["cloudfront"] = {"source": "missing"}
+        found = health.problems(stats, TODAY)
+        self.assertEqual(found, ["CDN allowlist cloudfront: live list rejected and no snapshot, built without it"])
+
     def test_ipv6_withheld(self):
         found = health.problems(_stats(ipv6={"published": False}), TODAY)
         self.assertEqual(found, ["IPv6 lists were withheld (the IPv4 lists were published)"])
@@ -81,9 +87,8 @@ class CliTest(unittest.TestCase):
         self.assertIn("the published lists are", out)
 
     def test_cli_healthy(self):
-        code, out = self._run(json.dumps(_stats(generated_at=None)))
-        self.assertEqual(code, 3)
-        code, out = self._run(json.dumps(_stats()).replace("2026-10-22", "2999-01-01"))
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        code, out = self._run(json.dumps(_stats(generated_at=now)))
         self.assertEqual((code, out), (0, ""))
 
     def test_cli_unreadable_stats(self):

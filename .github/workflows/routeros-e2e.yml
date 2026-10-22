@@ -112,7 +112,7 @@ jobs:
   # healthy weekly run closes it.
   report:
     needs: e2e
-    if: always() && github.event_name == 'schedule'
+    if: ${{ !cancelled() && github.event_name == 'schedule' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -131,7 +131,7 @@ jobs:
           CHR_VERSION: ${{ needs.e2e.outputs.chr_version }}
         run: |
           if [ "$RESULT" != "success" ]; then
-            echo "the end-to-end tests on RouterOS ${CHR_VERSION:-(unknown version)} did not pass (e2e job: $RESULT)" > problems.txt
+            echo "the end-to-end tests on RouterOS ${CHR_VERSION:-(unknown version)} did not pass (e2e job: $RESULT); check the log first: a failed setup step (apt, QEMU, image download) is not a RouterOS problem" > problems.txt
           else
             : > problems.txt
           fi

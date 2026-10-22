@@ -34,7 +34,8 @@ It prints one line per problem (nothing when healthy) and exits with 3 when ther
   `mbl/parsers.py` with an updated fixture in `tests/fixtures/`, or disable the source.
 - **`CDN allowlist X: live list rejected, used the snapshot`**: the provider changed its URL or
   format (see `PROVIDERS` in `mbl/cdn.py`). The build keeps working with the snapshot; fix the
-  provider entry when you can.
+  provider entry when you can. **`... and no snapshot, built without it`** is the same problem
+  without a fallback: that provider's ranges are not allowlisted until it is fixed, so fix it soon.
 - **`IPv6 lists were withheld`**: IPv4 was published, IPv6 kept the previous files. The run log has
   the reason (`warning: IPv6 not published, ...`), usually an IPv6 count outside its limits.
 - **`the build did not publish`** or **`the published lists are N days old`**: open the run log.
@@ -48,7 +49,9 @@ It prints one line per problem (nothing when healthy) and exits with 3 when ther
 
 ## `routeros-e2e` issue
 
-A new RouterOS release broke something. Download the `routeros-e2e-logs` artifact of the run (console
+A new RouterOS release probably broke something. First check which step failed: a setup step
+(apt, QEMU, the image download) is a CI problem, not a RouterOS one, and the next weekly run
+usually closes the issue. Otherwise download the `routeros-e2e-logs` artifact of the run (console
 and router logs), then reproduce locally with that version:
 
 ```bash
@@ -63,7 +66,8 @@ summary prints the checksum).
 
 The issue links to a compare page: open the pull request from it (a PR opened by you runs the
 normal checks), check the diff and merge it. The next monthly run closes the issue. If the issue
-says the live lists could not be downloaded, it is the same provider problem as above.
+says the live lists could not be downloaded, it may be a one-off network error (the next monthly
+run closes it) or the same provider problem as above.
 
 ## Dependabot pull requests
 
