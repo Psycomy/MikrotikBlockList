@@ -427,7 +427,8 @@ The RouterOS installer is also tested end to end on a disposable CHR (`MBL_E2E=1
   only after the new ones exist.
 - A reinstall never races an update: the installer stops with `MBL: an update is running
   (mblRunning is set)` and changes nothing while `mbl-update` runs (try again in a minute), and
-  holds the same lock while it replaces the rules, so a daily update started meanwhile is skipped.
+  holds the same lock from its first change until its own first load is done, so a daily update
+  started meanwhile is skipped.
   If the lock is stuck (an interrupted run), clear it with `:global mblRunning false`. As a second
   guard, `mbl-update` skips a family whose `MBL: in` rule is missing, and drops its load (keeping
   the active list) if that rule changed while it was loading.
@@ -600,9 +601,9 @@ Modelo de amenaza, ajustes recomendados de GitHub e informe privado de vulnerabi
 [bug](https://github.com/Psycomy/MikrotikBlockList/issues/new?template=bug.yml). Reinstalar no deja
 huecos: las reglas `MBL:` viejas pasan a `MBL-OLD:` y se borran cuando ya existen las nuevas. Tampoco
 choca con una actualización: mientras `mbl-update` corre, el instalador se detiene sin cambiar nada
-(`MBL: an update is running (mblRunning is set)`; reinténtalo en un minuto) y, mientras cambia las
-reglas, tiene el mismo cerrojo, así que una actualización diaria que arranque entonces se omite. Si el
-cerrojo se queda puesto (una ejecución interrumpida), libéralo con `:global mblRunning false`. Además,
+(`MBL: an update is running (mblRunning is set)`; reinténtalo en un minuto) y, desde su primer
+cambio hasta terminar su primera carga, tiene el mismo cerrojo, así que una actualización diaria que
+arranque entonces se omite. Si el cerrojo se queda puesto (una ejecución interrumpida), libéralo con `:global mblRunning false`. Además,
 `mbl-update` omite una familia sin su regla `MBL: in` y descarta la carga (conserva la lista activa) si
 esa regla cambió mientras cargaba.
 

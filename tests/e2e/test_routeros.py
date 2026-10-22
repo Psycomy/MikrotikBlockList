@@ -689,6 +689,45 @@ class RouterOsTest(unittest.TestCase):
         self.assertEqual(self.count(self.active_list()), LIST_SIZE)
         self.assertFalse(self.running())
 
+    def test_07i_update_during_reinstall_skipped(self):
+        # the installer holds the lock from step 2 through its own first load:
+        # an update started meanwhile (scheduler, by hand) is skipped
+        self.assertFalse(self.running())
+        token = self.mark()
+        result: dict[str, str] = {}
+
+        def install():
+            try:
+                result["out"] = self.install(self.base)
+            except ChrError as e:
+                result["out"] = str(e)
+
+        installer = threading.Thread(target=install, daemon=True)
+        installer.start()
+        try:
+            deadline = time.monotonic() + 120
+            # the lock is held and mbl-update exists again (step 3 removes it, step 5
+            # adds the new one): what a daily scheduler run would meet
+            while not (self.running() and self.num("/system script", 'name="mbl-update"')):
+                self.assertTrue(installer.is_alive(), f"installer ended first: {result}")
+                self.assertLess(time.monotonic(), deadline, "installer never took the lock")
+                time.sleep(0.2)
+            self.update()
+        finally:
+            installer.join(600)
+        self.assertFalse(installer.is_alive())
+        log = self.log_after(token)
+        self.assertIn("MBL: installed", result.get("out", ""), result)
+        self.assertIn("MBL: update already running, skipped", log)
+        loads = [ln for ln in log.splitlines() if ln.startswith("script;") and "MBL: loaded" in ln]
+        self.assertEqual(len(loads), 1, log)  # only the installer's first load
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
+        self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL-OLD:"'), 0)
+        self.assertEqual(self.count(self.active_list()), LIST_SIZE)
+        self.assertFalse(self.running())
+        self.assertEqual(self.chr.run(":global mblInstallRun; :put $mblInstallRun").strip(),
+                         "false")
+
     def test_08_uninstall_clean(self):
         lists = 'name="WAN" or name="LAN"'
         members = 'list="WAN" or list="LAN"'

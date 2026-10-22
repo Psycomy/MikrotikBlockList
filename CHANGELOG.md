@@ -27,8 +27,8 @@ published list carries it as `script=<version>` in its header.
   only then are the old ones removed; an aborted install keeps protecting, and the next install or
   uninstall cleans up `MBL-OLD:` (it also finds the active list through `MBL-OLD: MBL: in`).
 - Reinstall and update no longer race: the installer refuses to start while `mbl-update` holds its
-  lock (`mblRunning`, nothing changed) and holds that lock itself while it replaces the rules,
-  releasing it on any error. `mbl-update` skips a family without its `MBL: in` rule, and drops a
+  lock (`mblRunning`, nothing changed); it takes the lock in one check-and-set right before its first
+  change and holds it through its own first load, releasing it on any error and at the end. `mbl-update` skips a family without its `MBL: in` rule, and drops a
   load whose `MBL: in` rule changed meanwhile (the active list is kept).
 - CI and end-to-end hardening: the manual workflow version input is validated strictly, and the
   e2e cleanup also removes `MBLTEST` static DNS entries.

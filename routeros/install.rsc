@@ -14,7 +14,8 @@
 # Everything runs inside one block so that local variables survive and any
 # :error aborts the whole installer.
 # It refuses to run while an mbl-update is running, and holds the same lock
-# (:global mblRunning) from step 3 to step 7, so no update runs in between.
+# (:global mblRunning) from step 2 through the first load in step 8, so no
+# other update runs in between.
 {
 # ---------------------------------------------------------------- settings
 # Blocklist URL base. Forks: change this line only.
@@ -69,12 +70,9 @@
 :if ([:len [/interface list find where name="LAN"]] = 0) do={
   :error "MBL: interface list LAN not found (add your LAN interfaces to /interface list LAN). Nothing was changed."
 }
-# mbl-update's lock: a reinstall while an update loads a list could leave the
-# rules on a list that update empties next.
+# mbl-update's lock (taken just before step 2): a reinstall while an update
+# loads a list could leave the rules on a list that update empties next.
 :global mblRunning
-:if ($mblRunning = true) do={
-  :error "MBL: an update is running (mblRunning is set); try again in a minute, or clear it with :global mblRunning false. Nothing was changed."
-}
 # Variant: :global mblVariant if set, else the one in the installed
 # mbl-update (its ':local variant "<v>"' line, read before step 3 removes
 # it), else full. Only "full" or "lite" is ever used.
@@ -127,6 +125,17 @@
 :local mblUrl ($mblBase . "/routeros-" . $mblVar . ".txt")
 :local mblUrl6 ($mblBase . "/routeros6-" . $mblVar . ".txt")
 
+# Take the update lock in one check-and-set statement, just before the first
+# change. From here on, an mbl-update started by the scheduler or by hand is
+# skipped ("update already running"); only the installer's own first load
+# (step 8) runs. Any error until the end of step 7 releases the lock and
+# aborts the installer with that error; old rules, renamed MBL-OLD:, keep
+# dropping until the next install removes them.
+# (:onerror needs RouterOS 7.13 or later; the supported floor is 7.21.)
+:if ($mblRunning = true) do={
+  :error "MBL: an update is running (mblRunning is set); try again in a minute, or clear it with :global mblRunning false. Nothing was changed."
+} else={ :set mblRunning true }
+:onerror mblErr in={
 # ------------------------------------------- 2. HTTPS: built-in CA for fetch
 # builtin-trust-store is "all", "untrusted", "default" (= current-defaults)
 # or a list of components. Add "fetch" to it unless already covered.
@@ -146,13 +155,6 @@
   :log info "MBL: built-in CA store enabled for fetch ($comps)"
 }
 
-# Steps 3 to 7 hold the update lock: an mbl-update started meanwhile (the
-# daily scheduler, by hand) is skipped. Any error in them releases the lock
-# and aborts the installer with that error; the old rules, renamed MBL-OLD:,
-# keep dropping until the next install removes them.
-# (:onerror needs RouterOS 7.13 or later; the supported floor is 7.21.)
-:set mblRunning true
-:onerror mblErr in={
 # ------------------------------------------ 3. remove a previous installation
 # The address lists are kept so a reinstall never leaves the router
 # unprotected: the new rules point at the list that already has entries.
@@ -254,6 +256,8 @@
 :local maxAgeDays 3
 :global mblRunning
 :global mblBoot
+# set by install.rsc for its first load, which runs under the installer's lock
+:global mblInstallRun
 :global mblLastOk
 :global mblLastOk6
 # Rename file $1 to $2 (/file set name=), falling back to copy + remove.
@@ -340,7 +344,9 @@
 }
 :local boot ($mblBoot = true)
 :set mblBoot false
-:if ($mblRunning = true) do={
+:local owned ($mblInstallRun = true)
+:set mblInstallRun false
+:if ($mblRunning = true && !$owned) do={
   :log warning "MBL: update already running, skipped"
 } else={
   :set mblRunning true
@@ -747,7 +753,8 @@
       } on-error={ :log warning ("MBL: " . $fl . "update aborted") }
     }
   }
-  :set mblRunning false
+  # the installer's first load leaves the lock to the installer
+  :if (!$owned) do={ :set mblRunning false }
 }
 }
 
@@ -826,20 +833,25 @@ $mblInject "@MBL_IPV6@" $mblV6
 /ip firewall raw remove [find where comment~"^MBL-OLD:"]
 /ipv6 firewall raw remove [find where comment~"^MBL-OLD:"]
 } do={
-  # an error in steps 3-7: release the lock, then abort with that error
+  # an error in steps 2-7: release the lock, then abort with that error
   :set mblRunning false
   :error $mblErr
 }
 
 # -------------------------------------------------------- 8. first load
-# Release the lock this installer took before step 3, so that this first
-# load can run.
-:set mblRunning false
+# Still under the installer's lock: :global mblInstallRun tells this one
+# mbl-update run to go ahead despite the lock (it clears the flag at once and
+# leaves the lock alone). The installer releases the lock afterwards, in
+# every case.
+:global mblInstallRun
 :global mblLastOk
 :global mblLastOk6
 :set mblLastOk false
 :set mblLastOk6 false
-/system script run mbl-update
+:set mblInstallRun true
+:do { /system script run mbl-update } on-error={}
+:set mblInstallRun false
+:set mblRunning false
 /file remove [find where name="install.rsc" or name="flash/install.rsc"]
 :if ($mblLastOk = true) do={
   # IPv6 is best effort: IPv4 is installed even when the first IPv6 load failed.
