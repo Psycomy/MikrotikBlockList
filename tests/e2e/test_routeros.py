@@ -27,6 +27,7 @@ import atexit
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -559,14 +560,15 @@ class RouterOsTest(unittest.TestCase):
         active, n = self.active_list(), self.count(self.active_list())
         target = "mbl-b" if active == "mbl-a" else "mbl-a"
         token = self.mark()
-        self.start_update_bg()
         try:
-            deadline = time.monotonic() + 120
-            while self.count(target) == 0:
-                self.assertLess(time.monotonic(), deadline, self.log_after(token))
-                time.sleep(0.2)
-            self.chr.run('/ip firewall raw set [find where comment="MBL: in"] '
-                         'comment="MBL-OLD: MBL: in"')
+            # the router itself waits for the first loaded entry and renames the
+            # rule at once (a poll over SSH can miss the ~2 s load of 10000 entries)
+            self.chr.run(
+                '{:execute {/system script run mbl-update}; :local i 0;'
+                f':while ([:len [/ip firewall address-list find where list="{target}"]] = 0'
+                ' && $i < 1200) do={:delay 100ms; :set i ($i + 1)};'
+                '/ip firewall raw set [find where comment="MBL: in"] '
+                'comment="MBL-OLD: MBL: in"}', timeout=300)
             self.wait_not_running()
         finally:
             self.chr.run('/ip firewall raw set [find where comment="MBL-OLD: MBL: in"] '
@@ -598,13 +600,37 @@ class RouterOsTest(unittest.TestCase):
             self.wait_not_running()
             return out
 
+        token = self.mark()
         out, samples = self.sampled(race)
+        log = self.log_after(token)
         refused = "an update is running (mblRunning is set)" in out
         self.assertTrue(refused or "MBL: installed" in out, out)
+        # which branch ran: the installer refused, or it completed and the
+        # background update loaded first, was skipped on the lock / on missing
+        # rules, or dropped its load because the rules changed
+        if refused:
+            branch = "installer refused"
+        elif "update already running, skipped" in log:
+            branch = "installer completed, update skipped (lock)"
+        elif "rules missing, update skipped" in log:
+            branch = "installer completed, update skipped (rules missing)"
+        elif "rules changed during update, aborted" in log:
+            branch = "installer completed, update aborted (rules changed)"
+        else:
+            branch = "installer completed, update loaded"
+        print(f"\n  test_07f branch: {branch}", file=sys.stderr)
+        self.assertIn(branch, {
+            "installer refused", "installer completed, update skipped (lock)",
+            "installer completed, update skipped (rules missing)",
+            "installer completed, update aborted (rules changed)",
+            "installer completed, update loaded"}, log)
         if refused:
             self.assertIn("Nothing was changed.", out)
             self.assertEqual(self.num("/system script", 'name="mbl-update"'), 1)
             self.assertEqual(self.update_source(), source)
+        else:
+            self.assertIn("MBL: installed", log)
+        self.assertGreaterEqual(self.count(self.active_list()), MIN_ENTRIES, branch)
         self.assert_always_protected(samples)
         self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL:"'), 6)
         self.assertEqual(self.num("/ip firewall raw", 'comment~"^MBL-OLD:"'), 0)
