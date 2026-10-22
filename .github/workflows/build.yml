@@ -51,6 +51,8 @@ jobs:
       - name: Build
         env:
           ALLOW_GROWTH: ${{ inputs.allow_growth }}
+          # Only this step sees the key; when the secret is unset ThreatFox is skipped.
+          THREATFOX_AUTH_KEY: ${{ secrets.THREATFOX_AUTH_KEY }}
           PREVIOUS_STATS: "https://raw.githubusercontent.com/${{ github.repository }}/lists/stats.json"
         run: |
           extra=()

@@ -65,6 +65,32 @@ class ParserTests(unittest.TestCase):
         self.assertIn(IPv4Network("96.62.71.6/32"), result.networks)
         self.assertEqual(result.invalid, 0)
 
+    def test_threatfox_json_keeps_only_ip_port(self):
+        result = parse("threatfox_json", _fixture("threatfox_api.json"))
+        self.assertEqual(result.networks, [ip_network("45.137.65.12"), ip_network("185.220.101.7"),
+                                           ip_network("2a01:4f8:c17:1::5")])
+        self.assertEqual(result.invalid, 1)  # "not-an-ip:80"; domain and url IOCs are skipped
+
+    def test_threatfox_json_no_result_is_empty(self):
+        result = parse("threatfox_json", '{"query_status": "no_result"}')
+        self.assertEqual(result.networks, [])
+        self.assertEqual(result.invalid, 0)
+
+    def test_threatfox_json_error_status_raises(self):
+        with self.assertRaisesRegex(ValueError, "unknown_auth_key"):
+            parse("threatfox_json", '{"query_status": "unknown_auth_key"}')
+
+    def test_threatfox_json_malformed_raises(self):
+        for text in ("<html>", "[]", '{"query_status": "ok", "data": {}}'):
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                parse("threatfox_json", text)
+
+    def test_threatfox_json_bad_items_are_invalid(self):
+        text = '{"query_status": "ok", "data": [1, {"ioc_type": "ip:port"}, {"ioc_type": "ip:port", "ioc": 5}]}'
+        result = parse("threatfox_json", text)
+        self.assertEqual(result.networks, [])
+        self.assertEqual(result.invalid, 3)
+
     def test_c2intel_csv(self):
         result = parse("c2intel_csv", _fixture("c2intel.csv"))
         self.assertEqual(len(result.networks), 9)

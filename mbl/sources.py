@@ -1,10 +1,12 @@
 """Source catalog and local allowlist loading."""
+import json
 import tomllib
 from dataclasses import dataclass
 from ipaddress import IPv4Network, IPv6Network, ip_network
 from pathlib import Path
 
-FORMATS = frozenset({"plain", "dshield", "threatfox_csv", "c2intel_csv", "csv", "jsonl_cidr"})
+FORMATS = frozenset({"plain", "dshield", "threatfox_csv", "threatfox_json", "c2intel_csv", "csv",
+                     "jsonl_cidr"})
 CATEGORIES = frozenset({"attack", "c2"})
 VARIANTS = ("full", "lite")
 
@@ -19,6 +21,11 @@ class Source:
     required: bool = False
     license_note: str = ""
     variants: tuple[str, ...] = ("full",)
+    # auth_env names an environment variable holding an API key, sent in the
+    # auth_header request header (never in the URL); post_body makes it a JSON POST.
+    auth_env: str = ""
+    auth_header: str = "Auth-Key"
+    post_body: str = ""
 
 
 def load_sources(path: Path) -> list[Source]:
@@ -41,6 +48,13 @@ def load_sources(path: Path) -> list[Source]:
                 raise ValueError(f"{source.name}: unknown variant {variant!r}")
         if "lite" in source.variants and "full" not in source.variants:
             raise ValueError(f"{source.name}: a lite source must also be full")
+        if source.auth_env and not source.auth_header:
+            raise ValueError(f"{source.name}: auth_header must not be empty")
+        if source.post_body:
+            try:
+                json.loads(source.post_body)
+            except ValueError as exc:
+                raise ValueError(f"{source.name}: post_body is not valid JSON ({exc})") from exc
         if source.name in seen:
             raise ValueError(f"duplicate source name {source.name!r}")
         seen.add(source.name)

@@ -71,6 +71,34 @@ def _parse_threatfox_csv(text: str) -> ParseResult:
     return result
 
 
+def _parse_threatfox_json(text: str) -> ParseResult:
+    """ThreatFox API get_iocs response; only "ip:port" IOCs are kept."""
+    obj = json.loads(text)
+    if not isinstance(obj, dict):
+        raise ValueError("ThreatFox response is not an object")
+    status = obj.get("query_status")
+    if status == "no_result":
+        return ParseResult()
+    if status != "ok":
+        raise ValueError(f"ThreatFox query_status {status!r}")
+    data = obj.get("data")
+    if not isinstance(data, list):
+        raise ValueError("ThreatFox data is not a list")
+    result = ParseResult()
+    for item in data:
+        if not isinstance(item, dict) or not isinstance(item.get("ioc"), str):
+            result.invalid += 1
+            continue
+        if item.get("ioc_type") != "ip:port":
+            continue  # domains, urls and hashes
+        value = item["ioc"].strip()
+        if value.startswith("["):  # "[addr]:port"
+            _add(result, value[1:].split("]", 1)[0])
+        else:
+            _add(result, value.rsplit(":", 1)[0])
+    return result
+
+
 def _parse_csv_first_column(text: str) -> ParseResult:
     result = ParseResult()
     for row in _csv_rows(text):
@@ -107,6 +135,7 @@ _PARSERS = {
     "plain": _parse_plain,
     "dshield": _parse_dshield,
     "threatfox_csv": _parse_threatfox_csv,
+    "threatfox_json": _parse_threatfox_json,
     "c2intel_csv": _parse_csv_first_column,
     "csv": _parse_csv_first_column,
     "jsonl_cidr": _parse_jsonl_cidr,

@@ -1,4 +1,4 @@
-# Source catalog. Formats: plain, dshield, threatfox_csv, c2intel_csv, csv (first column). Categories: attack, c2.
+# Source catalog. Formats: plain, dshield, threatfox_csv, threatfox_json, c2intel_csv, csv (first column). Categories: attack, c2.
 # Home / non-commercial use only: non-commercial licenses are accepted.
 #
 # Removed: greensnow (https://blocklist.greensnow.co/greensnow.txt) - its site states
@@ -82,10 +82,17 @@ format = "csv"
 category = "attack"
 license_note = "CZ.NIC Turris Sentinel greylist, CC BY-NC-SA 4.0 (non-commercial only, attribution)"
 
+# ThreatFox needs a free abuse.ch Auth-Key since 2026-10-22 (the CSV export answers
+# 410 Gone). The key is read from THREATFOX_AUTH_KEY and sent in the Auth-Key header;
+# without it the source is skipped as a failed optional source. days = 2 matches the
+# old "recent" export (last 48 hours); the API allows 1-7.
 [[source]]
 name = "threatfox"
-url = "https://threatfox.abuse.ch/export/csv/ip-port/recent/"
-format = "threatfox_csv"
+url = "https://threatfox-api.abuse.ch/api/v1/"
+format = "threatfox_json"
+auth_env = "THREATFOX_AUTH_KEY"
+auth_header = "Auth-Key"
+post_body = '{"query": "get_iocs", "days": 2}'
 category = "c2"
 license_note = "abuse.ch fair use, free; commercial use may need paid API"
 variants = ["lite", "full"]

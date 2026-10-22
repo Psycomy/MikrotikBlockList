@@ -11,7 +11,7 @@ from pathlib import Path
 
 from mbl.cdn import DEFAULT_SNAPSHOT, CdnResult, fetch_cdn
 from mbl.checks import LIMITS, LIMITS6, MAX_DROP, safety_errors
-from mbl.fetch import USER_AGENT, SourceResult, fetch_all
+from mbl.fetch import USER_AGENT, SourceResult, fetch_all, missing_key_error
 from mbl.normalize import normalize, normalize6
 from mbl.render import ipv6_files, write_outputs
 from mbl.sources import VARIANTS, load_allowlist, load_sources
@@ -175,6 +175,9 @@ def build(sources_path: Path, allowlist_path: Path, out_dir: Path,
 
     now = now or datetime.now(timezone.utc)
     results = fetcher(sources)
+    for r in results:
+        if r.source.auth_env and r.error == missing_key_error(r.source.auth_env):
+            print(f"warning: {r.source.name}: {r.error}", file=sys.stderr)
     cdn: CdnResult = (cdn_fetcher or fetch_cdn)(Path(cdn_snapshot))
     allowlist = [*allowlist, *cdn.networks]
     variants, cap_errors = {}, []

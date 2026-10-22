@@ -1,4 +1,5 @@
 """Parallel download of blocklist sources."""
+import os
 import time
 import urllib.error
 import urllib.request
@@ -20,14 +21,21 @@ class SourceResult:
     error: str | None = None
 
 
+def missing_key_error(env: str) -> str:
+    """Error of a source skipped because its auth_env variable is unset or empty."""
+    return f"{env} not set, source skipped"
+
+
 def _retryable(exc: Exception) -> bool:
     if isinstance(exc, urllib.error.HTTPError):
         return exc.code >= 500 or exc.code == 429
     return True  # network errors and timeouts
 
 
-def _download(url: str, timeout: float, retries: int, backoff: float) -> str:
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+def _download(url: str, timeout: float, retries: int, backoff: float,
+              headers: dict[str, str] | None = None, body: bytes | None = None) -> str:
+    request = urllib.request.Request(url, data=body,
+                                     headers={"User-Agent": USER_AGENT, **(headers or {})})
     for attempt in range(retries + 1):
         try:
             with urllib.request.urlopen(request, timeout=timeout) as resp:
@@ -40,8 +48,20 @@ def _download(url: str, timeout: float, retries: int, backoff: float) -> str:
 
 
 def _fetch_one(source: Source, timeout: float, retries: int, backoff: float) -> SourceResult:
+    headers: dict[str, str] = {}
+    if source.auth_env:
+        key = os.environ.get(source.auth_env, "").strip()
+        if not key:
+            # never fail the build: an unset key is just a failed optional source
+            return SourceResult(source, error=missing_key_error(source.auth_env))
+        headers[source.auth_header] = key
+    body = None
+    if source.post_body:
+        headers["Content-Type"] = "application/json"
+        body = source.post_body.encode("utf-8")
     try:
-        text = _download(source.url, timeout, retries, backoff)
+        # error messages come from urllib (status and reason), never from the headers
+        text = _download(source.url, timeout, retries, backoff, headers, body)
         parsed = parse(source.format, text)
     except Exception as exc:  # any download or parse failure marks this source as failed
         return SourceResult(source, error=f"{type(exc).__name__}: {exc}")

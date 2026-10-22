@@ -5,6 +5,23 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/). The version in use is in [`VERSION`](VERSION), and the
 published list carries it as `script=<version>` in its header.
 
+## [3.3.2] - 2026-10-22
+
+### Fixed
+- ThreatFox is back. abuse.ch retired the anonymous CSV export (`410 Gone` since 2026-10-22); the
+  source now uses the ThreatFox API (`get_iocs`, last 2 days, `ip:port` IOCs only) with a free
+  abuse.ch Auth-Key from the `THREATFOX_AUTH_KEY` secret, sent in the `Auth-Key` header and never in
+  the URL or the logs. Without the key ThreatFox is skipped as a failed optional source and the build
+  still publishes.
+
+### Added
+- Sources can declare `auth_env` (environment variable with an API key), `auth_header` (default
+  `Auth-Key`) and `post_body` (JSON body, makes the request a POST) in `sources.toml`; new format
+  `threatfox_json`.
+
+### Notes
+- No router code changes: `VERSION` and the installer's `mblScriptVersion` stay at 3.3.1.
+
 ## [3.3.1] - 2026-10-21
 
 ### Added

@@ -1,0 +1,11 @@
+{
+    "query_status": "ok",
+    "data": [
+        {"id": "1", "ioc": "45.137.65.12:443", "threat_type": "botnet_cc", "ioc_type": "ip:port", "malware": "win.cobalt_strike", "confidence_level": 100, "first_seen": "2026-10-21 10:00:00 UTC", "tags": ["c2"]},
+        {"id": "2", "ioc": "185.220.101.7:8080", "threat_type": "botnet_cc", "ioc_type": "ip:port", "malware": "win.asyncrat", "confidence_level": 75, "first_seen": "2026-10-21 11:00:00 UTC", "tags": null},
+        {"id": "3", "ioc": "[2a01:4f8:c17:1::5]:443", "threat_type": "botnet_cc", "ioc_type": "ip:port", "malware": "win.sliver", "confidence_level": 100, "first_seen": "2026-10-21 12:00:00 UTC", "tags": null},
+        {"id": "4", "ioc": "evil.example.com", "threat_type": "botnet_cc", "ioc_type": "domain", "malware": "win.dridex", "confidence_level": 50, "first_seen": "2026-10-21 13:00:00 UTC", "tags": null},
+        {"id": "5", "ioc": "http://evil.example.com/gate.php", "threat_type": "payload_delivery", "ioc_type": "url", "malware": "win.dridex", "confidence_level": 50, "first_seen": "2026-10-21 14:00:00 UTC", "tags": null},
+        {"id": "6", "ioc": "not-an-ip:80", "threat_type": "botnet_cc", "ioc_type": "ip:port", "malware": "unknown", "confidence_level": 10, "first_seen": "2026-10-21 15:00:00 UTC", "tags": null}
+    ]
+}

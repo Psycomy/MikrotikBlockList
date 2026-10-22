@@ -11,7 +11,7 @@ from unittest import mock
 from mbl.__main__ import main
 from mbl.build import _previous_stats, _previous_totals, build
 from mbl.cdn import CdnResult
-from mbl.fetch import SourceResult
+from mbl.fetch import SourceResult, missing_key_error
 from mbl.sources import Source
 
 WHEN = datetime(2026, 10, 19, 4, 17, 0, tzinfo=timezone.utc)
@@ -172,6 +172,26 @@ variants = ["lite", "full"]
         self.assertEqual(code, 1)
         self.assertFalse(self.out.exists())
         self.assertTrue(err.getvalue().startswith("error: lite:"), err.getvalue())
+
+    def test_missing_auth_key_warns_and_still_publishes(self):
+        self.sources.write_text(SOURCES_TOML + """
+[[source]]
+name = "keyed"
+url = "https://example.invalid/api"
+format = "threatfox_json"
+category = "c2"
+auth_env = "MBL_TEST_KEY"
+""")
+
+        def fetch(sources):
+            return [SourceResult(sources[0], _nets(6000), 0, None),
+                    SourceResult(sources[1], [], 0, missing_key_error("MBL_TEST_KEY"))]
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            code = build(self.sources, self.allow, self.out, None, now=WHEN,
+                         fetcher=fetch, version_path=self.version)
+        self.assertEqual(code, 0)
+        self.assertIn("warning: keyed: MBL_TEST_KEY not set, source skipped", err.getvalue())
 
     @mock.patch("mbl.build._previous_stats", return_value=({"full": 20000}, {}))
     def test_first_lite_publish_skips_drop_and_growth(self, _prev):

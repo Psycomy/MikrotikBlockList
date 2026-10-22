@@ -300,10 +300,17 @@ Defined in [`sources.toml`](sources.toml). **C2** = botnet command-and-control s
 | [IPsum level 3](https://github.com/stamparm/ipsum) | attack |  | The Unlicense (public domain) |
 | [Binary Defense banlist](https://www.binarydefense.com/) | attack |  | Public use only, no commercial use (file header) |
 | [Turris Sentinel greylist](https://view.sentinel.turris.cz/greylist-data/) (CZ.NIC, honeypots on Turris routers) | attack |  | CC BY-NC-SA 4.0 (non-commercial only, attribution) |
-| [abuse.ch ThreatFox](https://threatfox.abuse.ch/) | c2 | yes | abuse.ch fair use, free; commercial use may need the paid API |
+| [abuse.ch ThreatFox](https://threatfox.abuse.ch/) (API, needs a free Auth-Key, see below) | c2 | yes | abuse.ch fair use, free; commercial use may need the paid API |
 | [ThreatCluster](https://threatcluster.io/iocs) | c2 | yes | **No license stated** — check the source terms |
 | [Data-Shield IPv4](https://github.com/duggytuxy/Data-Shield_IPv4_Blocklist) *(optional, disabled)* | attack |  | Repository GPLv3 |
 | [AbuseIPDB s100 (borestad)](https://github.com/borestad/blocklist-abuseipdb) *(optional, disabled)* | attack |  | No license stated; AbuseIPDB data used with permission |
+
+**ThreatFox needs an Auth-Key.** Since 2026-10-22 abuse.ch only serves ThreatFox to callers with a
+free Auth-Key. The build reads it from the `THREATFOX_AUTH_KEY` environment variable (in CI, the
+repository secret of the same name) and sends it in the `Auth-Key` header of the API call
+(`get_iocs`, last 2 days, `ip:port` IOCs only), never in the URL. Without the key ThreatFox is
+skipped as a failed optional source (`THREATFOX_AUTH_KEY not set` in the build summary) and the
+lists are still published, just without it — `lite` then has about half its entries.
 
 The selection comes from a comparison of 44 free feeds (size, overlap, unique contribution,
 false positives against CDN ranges and the top 5,000 sites, freshness and license): see
@@ -401,7 +408,10 @@ dropped packets cost almost nothing and never create conntrack entries.
 
 1. Fork the repository. The workflow uses `${{ github.repository }}`, so it publishes to **your**
    `lists` branch automatically (enable Actions in your fork; it runs daily and on pushes to `main`).
-2. Edit [`sources.toml`](sources.toml) and [`allowlist.txt`](allowlist.txt) as you like.
+2. Edit [`sources.toml`](sources.toml) and [`allowlist.txt`](allowlist.txt) as you like. For
+   ThreatFox, create a free Auth-Key at [auth.abuse.ch](https://auth.abuse.ch/) and add it as the
+   repository secret `THREATFOX_AUTH_KEY` (Settings → Secrets and variables → Actions); without it
+   ThreatFox is skipped.
 3. In [`routeros/install.rsc`](routeros/install.rsc) change the `mblBase` line at the top to your
    fork's `.../lists` URL (the script appends `/routeros-<variant>.txt`), and use your fork's URL in the install one-liner.
    To test against another server, set `:global mblUrlBase "https://host:port"` before the `/import`.
@@ -412,6 +422,8 @@ Build locally (Python 3.12, no dependencies):
 python -m unittest discover -v
 python -m mbl build --sources sources.toml --allowlist allowlist.txt --out dist
 ```
+
+To include ThreatFox locally, export your key first (`read -rs THREATFOX_AUTH_KEY; export THREATFOX_AUTH_KEY`).
 
 The RouterOS installer is also tested end to end on a disposable CHR (`MBL_E2E=1 python -m unittest tests.e2e.test_routeros -v`, needs QEMU/KVM; runs in CI as `routeros-e2e`). See [docs/testing-chr.md](docs/testing-chr.md).
 
@@ -486,7 +498,12 @@ en unos 25 s.
 **Elegir variante (*full* o *lite*):** `full` es la de por defecto (38.967 entradas IPv4 el 2026-10-21).
 `lite` (4.304 entradas IPv4) usa solo Spamhaus DROP (y DROPv6 con IPv6 activado), DShield, Emerging Threats compromised, ThreatFox y
 ThreatCluster (columna `lite` de la [tabla de fuentes](#sources-and-licenses)); es para routers con
-poca RAM o si solo quieres bloquear C2 y los rangos de ataque más graves. Para instalar `lite`, pon
+poca RAM o si solo quieres bloquear C2 y los rangos de ataque más graves. ThreatFox necesita desde
+el 2026-10-22 una Auth-Key gratuita de abuse.ch: el build la lee de la variable `THREATFOX_AUTH_KEY`
+(en CI, el secreto del repositorio con ese nombre) y la envía en la cabecera `Auth-Key`, nunca en la
+URL; sin ella ThreatFox se omite como fuente opcional fallida y las listas se publican igual, sin
+ella (`lite` queda en la mitad de entradas). En un fork, crea la clave en
+[auth.abuse.ch](https://auth.abuse.ch/) y añádela como secreto `THREATFOX_AUTH_KEY`. Para instalar `lite`, pon
 `:global mblVariant "lite"; ` delante del comando de instalación:
 
 ```routeros

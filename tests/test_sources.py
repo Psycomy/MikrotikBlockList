@@ -110,6 +110,31 @@ class SourcesTest(unittest.TestCase):
         self.assertEqual(s.variants, ("lite", "full"))
         self.assertEqual(s.url, "https://www.spamhaus.org/drop/drop_v6.json")
 
+    def test_auth_fields_default_empty(self):
+        s = self._load("")[0]
+        self.assertEqual((s.auth_env, s.auth_header, s.post_body), ("", "Auth-Key", ""))
+
+    def test_auth_fields_loaded(self):
+        s = self._load('auth_env = "K"\nauth_header = "X-Key"\npost_body = \'{"q": 1}\'')[0]
+        self.assertEqual((s.auth_env, s.auth_header, s.post_body), ("K", "X-Key", '{"q": 1}'))
+
+    def test_rejects_invalid_post_body(self):
+        with self.assertRaises(ValueError):
+            self._load('post_body = "{not json"')
+
+    def test_rejects_empty_auth_header(self):
+        with self.assertRaises(ValueError):
+            self._load('auth_env = "K"\nauth_header = ""')
+
+    def test_repo_catalog_has_threatfox_api(self):
+        s = {x.name: x for x in load_sources(Path("sources.toml"))}["threatfox"]
+        self.assertEqual(s.format, "threatfox_json")
+        self.assertEqual(s.url, "https://threatfox-api.abuse.ch/api/v1/")
+        self.assertEqual(s.auth_env, "THREATFOX_AUTH_KEY")
+        self.assertEqual(s.auth_header, "Auth-Key")
+        self.assertFalse(s.required)
+        self.assertEqual(s.variants, ("lite", "full"))
+
     def test_repo_allowlist_has_ipv6(self):
         nets = load_allowlist(Path("allowlist.txt"))
         self.assertIn(IPv6Network("2606:50c0::/32"), nets)
