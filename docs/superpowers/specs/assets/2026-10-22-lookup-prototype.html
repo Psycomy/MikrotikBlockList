@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MikroBlockList · IP lookup (prototipo)</title>
+<style>
+:root{--bg:#020812;--cyan:#00d9ff;--red:#ff3860;--green:#2bff88;--txt:#d8f3ff;--dim:#6f8ca3}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);font-family:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;overflow-x:hidden}
+canvas{position:fixed;inset:0;width:100%;height:100%}
+.vignette{position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 35%,rgba(0,0,0,.75) 100%)}
+.scan{position:fixed;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(255,255,255,.025) 0 1px,transparent 1px 3px)}
+main{position:relative;z-index:2;min-height:100%;padding-top:48px!important;padding-bottom:60px!important;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 16px}
+h1{margin:0 0 6px;font-size:clamp(34px,6vw,64px);letter-spacing:2px;text-shadow:0 0 24px rgba(0,217,255,.55)}
+h1 b{color:var(--red);text-shadow:0 0 24px rgba(255,56,96,.6)}
+.tag{color:var(--dim);font-size:13px;letter-spacing:3px;margin-bottom:34px;text-transform:uppercase}
+form{width:min(680px,100%);position:relative}
+input{width:100%;padding:20px 72px 20px 26px;font:inherit;font-size:20px;color:var(--txt);background:rgba(3,14,28,.82);border:1px solid rgba(0,217,255,.55);border-radius:999px;outline:none;box-shadow:0 0 30px rgba(0,217,255,.25),inset 0 0 20px rgba(0,217,255,.08);transition:.2s;backdrop-filter:blur(6px)}
+input:focus{border-color:var(--cyan);box-shadow:0 0 44px rgba(0,217,255,.5),inset 0 0 20px rgba(0,217,255,.12)}
+button{position:absolute;right:10px;top:50%;transform:translateY(-50%);width:52px;height:52px;border-radius:50%;border:0;background:var(--cyan);color:#001018;cursor:pointer;display:grid;place-items:center;box-shadow:0 0 20px var(--cyan)}
+.help{margin-top:16px;color:var(--dim);font-size:13.5px;text-align:center;max-width:620px;line-height:1.6}
+.help code{color:var(--txt);background:rgba(0,217,255,.08);padding:1px 6px;border-radius:4px;cursor:pointer}
+.result{margin-top:26px;width:min(680px,100%);min-height:150px}
+.card{border-radius:14px;padding:20px 24px;background:rgba(3,14,28,.88);backdrop-filter:blur(8px);animation:pop .35s ease-out}
+@keyframes pop{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+.card.bad{border:1px solid var(--red);box-shadow:0 0 40px rgba(255,56,96,.35)}
+.card.ok{border:1px solid var(--green);box-shadow:0 0 40px rgba(43,255,136,.25)}
+.verdict{font-size:24px;font-weight:800;letter-spacing:2px;display:flex;align-items:center;gap:12px}
+.bad .verdict{color:var(--red)}.ok .verdict{color:var(--green)}
+.ip{color:var(--txt);font-weight:400;font-size:16px;opacity:.8}
+.row{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.pill{font-size:12px;padding:5px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.18)}
+.pill.on{border-color:var(--red);color:#ffd0da;background:rgba(255,56,96,.12)}
+.pill.off{color:var(--dim)}
+.src{margin-top:14px;font-size:13px;color:var(--dim)}
+.src a{color:var(--cyan);text-decoration:none;margin-right:14px}
+.foot{position:fixed;bottom:14px;left:0;right:0;text-align:center;font-size:12px;color:var(--dim);z-index:2}
+.foot span{color:var(--txt)}
+.proto{position:fixed;top:10px;left:10px;z-index:3;font-size:11px;color:#001018;background:#ffd84d;padding:3px 8px;border-radius:4px}
+
+form.scanning input{border-color:transparent;background:linear-gradient(rgba(3,14,28,.92),rgba(3,14,28,.92)) padding-box,conic-gradient(from var(--ang),#00d9ff,transparent 30%,#ff3860 50%,transparent 70%,#00d9ff) border-box;animation:spin 0.9s linear infinite}
+@property --ang{syntax:'<angle>';inherits:false;initial-value:0deg}
+@keyframes spin{to{--ang:360deg}}
+button:active{transform:translateY(-50%) scale(.9)}
+form.scanning button{animation:btnpulse .5s ease-in-out infinite alternate}
+@keyframes btnpulse{to{box-shadow:0 0 40px #00d9ff,0 0 80px #00d9ff}}
+.status{margin-top:12px;height:18px;font-size:13px;color:var(--cyan);letter-spacing:1px;text-shadow:0 0 8px rgba(0,217,255,.6)}
+.bar{height:2px;width:min(680px,100%);margin-top:6px;background:rgba(0,217,255,.12);border-radius:2px;overflow:hidden;opacity:0;transition:opacity .2s}
+.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#00d9ff,#ff3860);box-shadow:0 0 10px #00d9ff}
+form.scanning~.bar{opacity:1}
+</style></head><body>
+<canvas id="map"></canvas><div class="vignette"></div><div class="scan"></div>
+<div class="proto">PROTOTIPO · datos de ejemplo</div>
+<main>
+  <h1>Mikro<b>Block</b>List</h1>
+  <div class="tag">threat blocklist · RouterOS v7</div>
+  <form id="f"><input id="q" autocomplete="off" spellcheck="false" placeholder="Escribe una IP… ej. 185.220.101.4" autofocus><button aria-label="Buscar"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg></button></form>
+  <div class="bar" id="bar"><i></i></div><div class="status" id="st"></div>
+  <div class="help">Comprueba si una dirección IPv4 o IPv6 está en la lista de bloqueo, en qué variantes (full, lite) y qué fuentes públicas la incluyen.
+    Prueba con <code>185.220.101.4</code> o <code>8.8.8.8</code>.</div>
+  <div class="result" id="r"></div>
+</main>
+<div class="foot"><span>39.480</span> IPv4 · <span>653</span> IPv6 · actualizada hoy 04:17 UTC · 7 fuentes</div>
+<script src="https://cdn.jsdelivr.net/npm/d3-array@3.2.4/dist/d3-array.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3-geo@3.1.1/dist/d3-geo.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
+<script>
+const c=document.getElementById('map'),x=c.getContext('2d');let w,h,dots=[],mask=null;
+// Land mask: 0.5 degree per pixel, longitude -180..180, latitude 80..-58 (no Antarctica).
+const MW=720,MH=276,LAT0=80,LATS=138;
+let S,OX,OY; // cover-fit of the 360x138 degree map on the screen
+function proj(lon,lat){return[OX+(lon+180)*S,OY+(LAT0-lat)*S]}
+function isLand(lon,lat){if(!mask)return false;const px=Math.floor((lon+180)*2),py=Math.floor((LAT0-lat)*2);
+  if(px<0||py<0||px>=MW||py>=MH)return false;return mask[(py*MW+px)*4+3]>128}
+function resize(){w=c.width=innerWidth*devicePixelRatio;h=c.height=innerHeight*devicePixelRatio;
+  S=Math.max(w/360,h/LATS);OX=(w-360*S)/2;OY=(h-LATS*S)/2;dots=[];
+  const step=7*devicePixelRatio;
+  for(let yy=step/2;yy<h;yy+=step)for(let xx=step/2;xx<w;xx+=step){const lon=(xx-OX)/S-180,lat=LAT0-(yy-OY)/S;
+    if(isLand(lon,lat))dots.push([xx,yy,Math.random()*6.28])}}
+Promise.all([fetch('https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/land-110m.json').then(r=>r.json())]).then(([topo])=>{
+  const land=topojson.feature(topo,topo.objects.land);
+  const oc=document.createElement('canvas');oc.width=MW;oc.height=MH;const ox=oc.getContext('2d');
+  const pr=d3.geoEquirectangular().scale(MW/(2*Math.PI)).translate([MW/2,LAT0*2]);
+  ox.fillStyle='#fff';ox.beginPath();d3.geoPath(pr,ox)(land);ox.fill();
+  mask=ox.getImageData(0,0,MW,MH).data;resize()});
+addEventListener('resize',resize);
+let arcs=[],pulses=[],waves=[];const home=()=>{const b=document.getElementById('q').getBoundingClientRect(),d=devicePixelRatio;return[(b.left+b.width/2)*d,(b.top+b.height/2)*d]};
+function rnd(){return dots.length?dots[Math.floor(Math.random()*dots.length)]:[w*Math.random(),h*Math.random()]}
+function spawn(from,big){const p=from||rnd();let t=big?null:rnd();if(t&&Math.hypot(t[0]-p[0],t[1]-p[1])<w*0.12)t=rnd();arcs.push({s:p,d:t,t:0,big:!!big,sp:big?0.008:0.007+Math.random()*0.009})}
+// Spawn from the animation loop (paused while the tab is hidden) and cap the
+// number of arcs, so nothing piles up when the page comes back.
+const MAX_ARCS=40;let lastSpawn=0;
+function tick(now){if(now-lastSpawn>260){lastSpawn=now;if(arcs.length<MAX_ARCS){spawn();if(Math.random()<.5)spawn()}}}
+function loop(now){tick(now||0);x.fillStyle='#020812';x.fillRect(0,0,w,h);
+  const d=devicePixelRatio,tm=performance.now()/900;
+  for(const wv of waves)wv.r+=wv.v*d;waves=waves.filter(wv=>wv.r<Math.hypot(w,h));
+  for(const p of dots){let a=.34+.2*Math.sin(tm+p[2]),boost=0,col='0,217,255';
+    for(const wv of waves){const dd=Math.abs(Math.hypot(p[0]-wv.x,p[1]-wv.y)-wv.r);if(dd<26*d){boost=Math.max(boost,1-dd/(26*d));col=wv.col}}
+    x.fillStyle='rgba('+col+','+Math.min(1,a+boost)+')';x.beginPath();x.arc(p[0],p[1],(1.25+boost*1.6)*d,0,7);x.fill()}
+  for(const wv of waves){x.beginPath();x.lineWidth=1.5*d;x.strokeStyle='rgba('+wv.col+','+Math.max(0,.5-wv.r/Math.hypot(w,h)*.5)+')';x.arc(wv.x,wv.y,wv.r,0,7);x.stroke()}
+  const H=home();
+  for(const a of arcs){a.t+=a.sp;const T=a.d||H,e=Math.min(a.t,1),mx=(a.s[0]+T[0])/2,my=Math.min(a.s[1],T[1])-Math.hypot(T[0]-a.s[0],T[1]-a.s[1])*0.35;
+    const N=48,pts=[];for(let k=0;k<=N*e;k++){const u=k/N;pts.push([(1-u)*(1-u)*a.s[0]+2*(1-u)*u*mx+u*u*T[0],(1-u)*(1-u)*a.s[1]+2*(1-u)*u*my+u*u*T[1]])}
+    const fade=a.t>1?Math.max(0,1-(a.t-1)*2.5):1;
+    // faint full trail
+    x.beginPath();x.lineWidth=(a.big?2:0.8)*d;x.strokeStyle='rgba(255,56,96,'+(a.big?0.6:0.3)*fade+')';pts.forEach((p,i)=>i?x.lineTo(p[0],p[1]):x.moveTo(p[0],p[1]));x.stroke();
+    // bright comet head
+    if(e<1&&pts.length>1){const k0=Math.max(0,pts.length-10);x.beginPath();x.lineWidth=(a.big?3.5:1.6)*d;x.strokeStyle=a.big?'#ff5c7d':'rgba(255,90,120,.95)';x.shadowColor='#ff3860';x.shadowBlur=12*d;
+      for(let i=k0;i<pts.length;i++)i===k0?x.moveTo(pts[i][0],pts[i][1]):x.lineTo(pts[i][0],pts[i][1]);x.stroke();x.shadowBlur=0;
+      const hp=pts[pts.length-1];x.beginPath();x.fillStyle='#ffe0e7';x.arc(hp[0],hp[1],(a.big?4:2)*d,0,7);x.fill()}
+    if(a.t>=1&&!a.hit){a.hit=1;pulses.push({r:0,big:a.big,at:T})}}
+  arcs=arcs.filter(a=>a.t<1.6);
+  for(const p of pulses){p.r+=(p.big?3:0.9)*d;x.beginPath();x.lineWidth=(p.big?3:1.2)*d;x.strokeStyle='rgba(0,217,255,'+Math.max(0,1-p.r/(p.big?220*d:22*d))+')';x.arc(p.at[0],p.at[1],p.r,0,7);x.stroke()}
+  pulses=pulses.filter(p=>p.r<(p.big?220:22)*d);
+    requestAnimationFrame(loop)}
+loop();
+// Fake data for the prototype
+const DEMO={"185.220.101.4":{full:1,lite:1,v6:0,src:["Spamhaus DROP","CINS Army","ET Compromised"],geo:[8.7,50.1]},
+            "45.0.0.9":{full:1,lite:0,v6:0,src:["IPsum"],geo:[-46.6,-23.5]}};
+document.querySelectorAll('.help code').forEach(e=>e.onclick=()=>{q.value=e.textContent;f.requestSubmit()});
+function wave(col){const b=q.getBoundingClientRect(),d=devicePixelRatio;waves.push({x:(b.left+b.width/2)*d,y:(b.top+b.height/2)*d,r:0,v:14,col})}
+let busy=false;
+f.onsubmit=ev=>{ev.preventDefault();const ip=q.value.trim();if(!ip||busy)return;busy=true;
+  const r=document.getElementById('r'),st=document.getElementById('st'),bar=document.querySelector('#bar i');
+  r.innerHTML='';f.classList.add('scanning');wave('0,217,255');
+  const total=39480,t0=performance.now(),D=1100;
+  (function prog(now){const k=Math.min(1,(now-t0)/D);bar.style.width=(k*100)+'%';
+    st.textContent='> escaneando '+Math.floor(k*total).toLocaleString('es')+' / '+total.toLocaleString('es')+' entradas · 7 fuentes';
+    if(k<1)requestAnimationFrame(prog);else done()})(t0);
+  function done(){f.classList.remove('scanning');bar.style.width='0';busy=false;const hit=DEMO[ip];
+    if(hit){st.textContent='> coincidencia encontrada';st.style.color='var(--red)';wave('255,56,96');
+      const g=proj(hit.geo[0],hit.geo[1]);spawn(g,true);
+      setTimeout(()=>{r.innerHTML=`<div class="card bad"><div class="verdict">⛔ BLOQUEADA <span class="ip">${ip}</span></div>
+      <div class="row"><span class="pill ${hit.full?'on':'off'}">full</span><span class="pill ${hit.lite?'on':'off'}">lite</span><span class="pill ${hit.v6?'on':'off'}">IPv6</span><span class="pill on">dentro de 185.220.100.0/22</span></div>
+      <div class="src">Fuentes: ${hit.src.map(s=>`<a href="#">${s} ↗</a>`).join('')}</div>
+      <div class="src">¿Es un error? <a href="#">Reportar falso positivo ↗</a></div></div>`;document.body.animate([{filter:'none'},{filter:'hue-rotate(-20deg) saturate(1.8)'},{filter:'none'}],{duration:350})},1300)}
+    else{st.textContent='> sin coincidencias';st.style.color='var(--green)';wave('43,255,136');
+      r.innerHTML=`<div class="card ok"><div class="verdict">✓ NO ESTÁ EN LA LISTA <span class="ip">${ip}</span></div>
+      <div class="src">Ninguna de las fuentes la incluye en la lista publicada hoy.</div></div>`}
+    setTimeout(()=>{st.style.color=''},2500)}};
+</script></body></html>
