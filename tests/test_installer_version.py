@@ -62,6 +62,16 @@ class InstallerVersionTest(unittest.TestCase):
     def test_installer_injects_ipv6_placeholder(self):
         self.assertIn('$mblInject "@MBL_IPV6@" $mblV6', INSTALLER.read_text())
 
+    def test_installer_has_mode_placeholder(self):
+        body = _update_body(INSTALLER.read_text())
+        self.assertEqual(body.count("@MBL_MODE@"), 1)
+        self.assertIn(':local mode "@MBL_MODE@"', body)
+        # the installer reads the mode back from this line only
+        self.assertEqual(body.count(':local mode "'), 1)
+
+    def test_installer_injects_mode_placeholder(self):
+        self.assertIn('$mblInject "@MBL_MODE@" $mblMd', INSTALLER.read_text())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -86,9 +86,32 @@ Paste this into the RouterOS terminal (Winbox, WebFig or SSH):
 /tool fetch url="https://raw.githubusercontent.com/Psycomy/MikroBlockList/main/routeros/install.rsc" check-certificate=yes; /import install.rsc
 ```
 
-It prints `MBL: installed (script 3.4.1, variant full, ipv6 no)` when the first list is loaded (about 20 seconds). The installer is
+It prints `MBL: installed (script 3.5.0, variant full, ipv6 no, mode block)` when the first list is loaded (about 20 seconds). The installer is
 idempotent: run it again at any time to upgrade or repair; nothing is duplicated and your
 allowlist is kept.
+
+### Try it first: log-only mode
+
+To see what the list would block before it blocks anything, put `:global mblMode "log"; ` in front
+of the one-liner (it combines with `mblVariant` and `mblIpv6`):
+
+```routeros
+:global mblMode "log"; /tool fetch url="https://raw.githubusercontent.com/Psycomy/MikroBlockList/main/routeros/install.rsc" check-certificate=yes; /import install.rsc
+```
+
+- The same rules are created, but nothing is dropped: `MBL: in` only counts (`passthrough`, inbound
+  scanners would flood the log), `MBL: out` logs `MBL-OUT` and `MBL: router-out` logs `MBL-ROUTER`.
+  Those two are where a false positive shows up: a LAN device or the router itself reaching a
+  listed address.
+- Each update logs `MBL: would have dropped since ...` (see [counters](#see-what-is-blocked)) and the
+  warning `MBL: log-only mode, nothing is blocked (reinstall with :global mblMode "block" to block)`.
+- To start blocking: `:global mblMode "block"; ` plus the same one-liner. There is no gap: the old
+  rules stay until the new ones are in place.
+- The choice is kept when you reinstall with `mblMode` empty. Any value other than `block` or `log`
+  stops the installer before it changes anything. The global lives until the router reboots, so set
+  it explicitly (`"block"`, `"log"`, or `""` to keep what is installed) when you reinstall in the same
+  session.
+- The final message tells you the mode: `MBL: installed (script 3.5.0, variant full, ipv6 no, mode log)`.
 
 ### Choose a variant: full or lite
 
@@ -109,7 +132,7 @@ To install `lite`, put `:global mblVariant "lite"; ` in front of the one-liner:
 - The global lives until the router reboots, so if you reinstall in the same session, set it
   explicitly (`"full"`, `"lite"`, or `""` to keep what is installed).
 - Any value other than `full` or `lite` stops the installer before it changes anything.
-- The final message tells you which one is installed: `MBL: installed (script 3.4.1, variant lite, ipv6 no)`.
+- The final message tells you which one is installed: `MBL: installed (script 3.5.0, variant lite, ipv6 no, mode block)`.
 - A downloaded list whose header says another variant is rejected (`bad header`).
 
 ### Optional IPv6
@@ -130,7 +153,7 @@ the one-liner (it combines with `:global mblVariant "lite"; `):
 - Any value other than `true` or `false` stops the installer before it changes anything.
 - The global lives until the router reboots, so set it explicitly (`true`, `false`, or `""` to keep
   what is installed) when you reinstall in the same session.
-- The final message tells you the state: `MBL: installed (script 3.4.1, variant full, ipv6 yes)`.
+- The final message tells you the state: `MBL: installed (script 3.5.0, variant full, ipv6 yes, mode block)`.
 - Add your own IPv6 exceptions the same way as for IPv4:
   `/ipv6 firewall address-list add list=mbl6-allow address=2001:db8::/32 comment="my office"`.
 - **Best effort:** IPv6 never blocks IPv4. If the IPv6 list fails its checks on the build, no IPv6
@@ -177,6 +200,8 @@ Six rules at the **top** of `/ip firewall raw`, in this order:
 | `MBL: allow-router-out` | output | dst in `mbl-allow` | accept | Allowlist for traffic from the router itself |
 | `MBL: router-out` | output | dst in active list | drop | Router's own traffic to listed hosts |
 
+In [log-only mode](#try-it-first-log-only-mode) the three drop rules count and log instead of dropping.
+
 Plus:
 
 | Object | Name | Purpose |
@@ -208,7 +233,17 @@ With [IPv6 enabled](#optional-ipv6) it also creates six rules with the same `MBL
 An `MBL-OUT` entry means a device on your network tried to talk to a known C2 or malicious host:
 worth checking that device. Only that outbound LAN rule (`MBL: out`) logs; inbound drops
 (`MBL: in`) and the router's own blocked traffic (`MBL: router-out`) are not logged, so check
-them with the counters above.
+them with the counters above (in log-only mode `MBL: router-out` logs `MBL-ROUTER` too).
+
+Each update (not the one at boot) also logs what the three drop rules caught since the previous
+report, then resets their counters:
+
+```
+MBL: dropped since 2026-10-22 03:14:15: in 5120, out 2, router-out 0 packets
+```
+
+In log-only mode it says `would have dropped`; with IPv6 on it ends with
+`; ipv6 in N, out N, router-out N`. After a reboot the first report says `since boot`.
 
 If the list on GitHub stops being updated (e.g. the Action is disabled), the router keeps the
 last list it loaded and logs `MBL: list is N days old` on each update once it is more than 3
@@ -472,7 +507,28 @@ Crea seis reglas `MBL:` arriba del todo en `/ip firewall raw`, las listas altern
 la allowlist `mbl-allow` (con las IPs de administración actuales como `MBL: admin`), el script
 `mbl-update` y los schedulers `mbl-daily` (una vez al día, a hora aleatoria) y `mbl-boot` (recarga
 `mbl-last.txt` al arrancar). Además activa el componente `fetch` en el almacén de certificados
-integrado (`builtin-trust-store`). Se puede volver a ejecutar sin duplicar nada.
+integrado (`builtin-trust-store`). Se puede volver a ejecutar sin duplicar nada. Al terminar
+muestra `MBL: installed (script 3.5.0, variant full, ipv6 no, mode block)`.
+
+**Probar primero: modo solo log.** Para ver qué bloquearía la lista sin bloquear nada, pon
+`:global mblMode "log"; ` delante del comando de instalación (se combina con `mblVariant` y `mblIpv6`):
+
+```routeros
+:global mblMode "log"; /tool fetch url="https://raw.githubusercontent.com/Psycomy/MikroBlockList/main/routeros/install.rsc" check-certificate=yes; /import install.rsc
+```
+
+- Se crean las mismas reglas, pero no se descarta nada: `MBL: in` solo cuenta (`passthrough`, los
+  escáneres de entrada llenarían el log), `MBL: out` registra `MBL-OUT` y `MBL: router-out` registra
+  `MBL-ROUTER`. Ahí aparecen los falsos positivos: un equipo de la LAN o el propio router conectando
+  con una dirección de la lista.
+- Cada actualización registra `MBL: would have dropped since ...` (ver [Ver bloqueos](#ver-bloqueos)) y
+  el aviso `MBL: log-only mode, nothing is blocked (reinstall with :global mblMode "block" to block)`.
+- Para empezar a bloquear: `:global mblMode "block"; ` y el mismo comando. No hay hueco: las reglas
+  viejas siguen hasta que existen las nuevas.
+- La elección se conserva al reinstalar con `mblMode` vacía. Cualquier valor distinto de `block` o
+  `log` detiene el instalador antes de cambiar nada. La global dura hasta que el router se reinicia;
+  si reinstalas en la misma sesión, defínela de forma explícita (`"block"`, `"log"` o `""`).
+- El mensaje final indica el modo: `MBL: installed (script 3.5.0, variant full, ipv6 no, mode log)`.
 
 **Cómo funciona en el router:** descarga `routeros-<variante>.txt`, lo lee con `/file read` en trozos
 de 32 KiB y valida cada línea (IPv4 o CIDR con prefijo de 8 a 32); solo añade direcciones. Nunca
@@ -499,7 +555,7 @@ poca RAM o si solo quieres bloquear C2 y los rangos de ataque más graves. Para 
 - La global dura hasta que el router se reinicia; si reinstalas en la misma sesión, defínela de forma
   explícita (`"full"`, `"lite"` o `""` para conservar lo instalado).
 - Cualquier valor distinto de `full` o `lite` detiene el instalador antes de cambiar nada.
-- El mensaje final indica la variante: `MBL: installed (script 3.4.1, variant lite, ipv6 no)`.
+- El mensaje final indica la variante: `MBL: installed (script 3.5.0, variant lite, ipv6 no, mode block)`.
 - Una lista descargada con otra `variant=` en la cabecera se rechaza (`bad header`).
 - Límites de publicación: `full` 5.000 a 150.000 entradas, `lite` 1.000 a 20.000; si falla cualquiera
   de las dos, no se publica nada. Tamaño mínimo del fichero en el router: 100.000 bytes (`full`) y
@@ -529,7 +585,7 @@ Viene **desactivado**. Para bloquear también atacantes IPv6, pon
 - Cualquier valor distinto de `true` o `false` detiene el instalador antes de cambiar nada.
 - La global dura hasta que el router se reinicia; si reinstalas en la misma sesión, defínela de forma
   explícita (`true`, `false` o `""` para conservar lo instalado).
-- El mensaje final indica el estado: `MBL: installed (script 3.4.1, variant full, ipv6 yes)`.
+- El mensaje final indica el estado: `MBL: installed (script 3.5.0, variant full, ipv6 yes, mode block)`.
 - Tus excepciones IPv6 van igual que las de IPv4:
   `/ipv6 firewall address-list add list=mbl6-allow address=2001:db8::/32 comment="mi oficina"`.
 - **Mejor esfuerzo:** IPv6 nunca bloquea IPv4. Si la lista IPv6 no pasa las comprobaciones en la
@@ -613,7 +669,18 @@ esa regla cambió mientras cargaba.
 
 `MBL-OUT` indica que un equipo de tu LAN intentó conectar con un host de la lista: conviene revisarlo.
 Solo registra esa regla de salida de la LAN (`MBL: out`); lo bloqueado de entrada (`MBL: in`) y el
-tráfico propio del router (`MBL: router-out`) no se registran: míralos en los contadores.
+tráfico propio del router (`MBL: router-out`) no se registran: míralos en los contadores (en modo
+solo log `MBL: router-out` también registra `MBL-ROUTER`).
+
+Cada actualización (salvo la del arranque) registra además lo que cogieron las tres reglas de
+descarte desde el informe anterior, y pone sus contadores a cero:
+
+```
+MBL: dropped since 2026-10-22 03:14:15: in 5120, out 2, router-out 0 packets
+```
+
+En modo solo log dice `would have dropped`; con IPv6 activado termina en
+`; ipv6 in N, out N, router-out N`. Tras un reinicio el primer informe dice `since boot`.
 
 Si la lista de GitHub deja de actualizarse (p. ej. la Action está desactivada), el router mantiene
 la última lista cargada y, cuando tiene más de 3 días, registra `MBL: list is N days old` en cada
