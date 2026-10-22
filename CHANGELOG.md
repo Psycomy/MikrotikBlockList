@@ -5,6 +5,15 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/). The version in use is in [`VERSION`](VERSION), and the
 published list carries it as `script=<version>` in its header.
 
+## [Unreleased] - 2026-10-22
+
+### Removed
+- ThreatFox source disabled (`enabled = false` in `sources.toml`). Its public CSV export now returns
+  410 and the API requires an abuse.ch Auth-Key; abuse.ch's Terms of Use (§7.3) forbid copying or
+  making derivative works from their data without express consent, and ThreatFox is no longer CC0
+  (§3.4), so this project must not republish it. `lite` drops to about 2.1k IPv4 entries. No router
+  change: installed routers keep working and need no reinstall.
+
 ## [3.3.1] - 2026-10-21
 
 ### Added

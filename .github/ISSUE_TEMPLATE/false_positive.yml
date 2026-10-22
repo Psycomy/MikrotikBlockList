@@ -45,7 +45,6 @@ body:
         - ipsum-3
         - binarydefense
         - turris-greylist
-        - threatfox
         - threatcluster
         - datashield
         - abuseipdb-s100

@@ -82,12 +82,17 @@ format = "csv"
 category = "attack"
 license_note = "CZ.NIC Turris Sentinel greylist, CC BY-NC-SA 4.0 (non-commercial only, attribution)"
 
+# Disabled 2026-10-22: the public CSV export returns 410 and the API needs an abuse.ch
+# Auth-Key. abuse.ch Terms of Use §7.3 forbid copying or making derivative works from
+# their data without express consent, and ThreatFox is no longer CC0 (§3.4), so this
+# project must not republish it. Re-enable only with written permission from abuse.ch.
 [[source]]
 name = "threatfox"
 url = "https://threatfox.abuse.ch/export/csv/ip-port/recent/"
 format = "threatfox_csv"
 category = "c2"
-license_note = "abuse.ch fair use, free; commercial use may need paid API"
+enabled = false
+license_note = "abuse.ch Terms of Use: no derivative works/republication without express consent; not CC0"
 variants = ["lite", "full"]
 
 [[source]]
