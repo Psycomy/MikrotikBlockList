@@ -46,7 +46,7 @@ It prints one line per problem (nothing when healthy) and exits with 3 when ther
   Routers keep their last good list meanwhile and log `MBL: list is N days old` after a few days.
 - **`warning: lookup.json not published (...)`** (in the run log, not an issue): the data for the
   [lookup page](https://psycomy.github.io/MikroBlockList/) was skipped; the lists were still
-  published. The page keeps showing the previous `lookup.json`. The reason is in the parentheses.
+  published. `lookup.json` is then absent from the `lists` branch until the next good build, and the page shows "list unavailable". The reason is in the parentheses; once the cause is gone, rerun the `build` workflow to fix it.
 - **`warning: DB-IP unavailable (...); lookup.json without countries`**: the DB-IP Country Lite
   file (CC BY 4.0, cached monthly in Actions by `python -m mbl dbip-fetch --cache .dbip`) was
   missing or unreadable. The page works but shows no countries. Rerun the `build` workflow; if it
