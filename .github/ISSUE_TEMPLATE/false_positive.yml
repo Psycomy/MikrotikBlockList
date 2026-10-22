@@ -33,7 +33,7 @@ body:
     id: source
     attributes:
       label: Source (if known)
-      description: "Which source lists it? Check https://github.com/Psycomy/MikrotikBlockList/tree/lists if unsure."
+      description: "Which source lists it? Check https://github.com/Psycomy/MikroBlockList/tree/lists if unsure."
       options:
         - unknown
         - spamhaus-drop

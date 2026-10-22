@@ -1,8 +1,8 @@
-# MikrotikBlockList v3 - RouterOS v7 uninstaller
-# https://github.com/Psycomy/MikrotikBlockList
+# MikroBlockList v3 - RouterOS v7 uninstaller
+# https://github.com/Psycomy/MikroBlockList
 #
 # Usage:
-#   /tool fetch url="https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/main/routeros/uninstall.rsc" check-certificate=yes; /import uninstall.rsc
+#   /tool fetch url="https://raw.githubusercontent.com/Psycomy/MikroBlockList/main/routeros/uninstall.rsc" check-certificate=yes; /import uninstall.rsc
 #
 # Removes only what install.rsc created (names mbl-* / comments MBL:* and
 # MBL-OLD:*, the old rules an interrupted reinstall may leave).

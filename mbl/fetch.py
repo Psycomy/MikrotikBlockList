@@ -9,7 +9,7 @@ from ipaddress import IPv4Network, IPv6Network
 from mbl.parsers import parse
 from mbl.sources import Source
 
-USER_AGENT = "MikrotikBlockList/2.0 (+https://github.com/Psycomy/MikrotikBlockList)"
+USER_AGENT = "MikroBlockList/2.0 (+https://github.com/Psycomy/MikroBlockList)"
 
 
 @dataclass

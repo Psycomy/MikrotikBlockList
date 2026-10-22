@@ -1,9 +1,9 @@
-# MikrotikBlockList v3 - RouterOS v7 installer
-# https://github.com/Psycomy/MikrotikBlockList
+# MikroBlockList v3 - RouterOS v7 installer
+# https://github.com/Psycomy/MikroBlockList
 # For home / non-commercial use only (see source licenses in README)
 #
 # Usage:
-#   /tool fetch url="https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/main/routeros/install.rsc" check-certificate=yes; /import install.rsc
+#   /tool fetch url="https://raw.githubusercontent.com/Psycomy/MikroBlockList/main/routeros/install.rsc" check-certificate=yes; /import install.rsc
 #
 # Idempotent: re-running it removes and recreates everything named mbl-* / MBL:*.
 # The old MBL: raw rules keep dropping until the new ones are in place (they
@@ -19,7 +19,7 @@
 {
 # ---------------------------------------------------------------- settings
 # Blocklist URL base. Forks: change this line only.
-:local mblBase "https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/lists"
+:local mblBase "https://raw.githubusercontent.com/Psycomy/MikroBlockList/lists"
 # Test/dev only: set :global mblUrlBase before /import to use another server.
 :global mblUrlBase
 :if ([:len $mblUrlBase] > 0) do={
@@ -41,7 +41,7 @@
 :local mblMinVersion "7.21"
 # Version of this installer and of the mbl-update it installs (= VERSION file).
 # mbl-update logs a warning when the published list says a newer one exists.
-:local mblScriptVersion "3.3.2"
+:local mblScriptVersion "3.4.0"
 
 # "7.21.3 (stable)" -> 7021 ; "7.19rc2" -> 7019
 :local mblVerNum do={
@@ -231,7 +231,7 @@
 # $mblScriptVersion, $mblVar and $mblV6 below.
 /system script add name=mbl-update policy=ftp,read,write,policy,test \
   dont-require-permissions=no comment="MBL: blocklist updater" source={
-# MikrotikBlockList v3 updater - installed by install.rsc, do not edit.
+# MikroBlockList v3 updater - installed by install.rsc, do not edit.
 # Normal run: download the plain list, read it in chunks and add each valid
 # line to the inactive list (mbl-a or mbl-b), switch the MBL rules to it,
 # empty the old list.
@@ -525,7 +525,8 @@
                 :if ($n < [:len $ln]) do={ :set ln [:pick $ln 0 $n] }
                 :if ($first) do={
                   :set first false
-                  :if ([:pick $ln 0 20] != "# MikrotikBlockList ") do={
+                  # Both the current header and the pre-rename one (MikrotikBlockList) are accepted.
+                  :if ([:pick $ln 0 20] != "# MikrotikBlockList " && [:pick $ln 0 17] != "# MikroBlockList ") do={
                     :set reason "no header"
                   } else={
                     :local en [$mblField $ln "entries"]
@@ -746,7 +747,7 @@
           # a value is logged. Errors are ignored, as for the stale list warning.
           :do {
             :if ([$mblVerGt $pubScript $scriptVersion] = true) do={
-              :log warning ("MBL: script $pubScript available (installed $scriptVersion) - reinstall: /tool fetch url=\"https://raw.githubusercontent.com/Psycomy/MikrotikBlockList/main/routeros/install.rsc\" check-certificate=yes; /import install.rsc")
+              :log warning ("MBL: script $pubScript available (installed $scriptVersion) - reinstall: /tool fetch url=\"https://raw.githubusercontent.com/Psycomy/MikroBlockList/main/routeros/install.rsc\" check-certificate=yes; /import install.rsc")
             }
           } on-error={}
         }

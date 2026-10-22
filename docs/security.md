@@ -24,17 +24,17 @@ Resumen en español al final / Spanish summary at the end.
    <https://github.com/settings/security>.
 2. **Protect `main`** with a ruleset (or branch protection): pull request required, and the status
    check `test` required:
-   <https://github.com/Psycomy/MikrotikBlockList/settings/rules>.
+   <https://github.com/Psycomy/MikroBlockList/settings/rules>.
    The `e2e` workflow only runs when `routeros/`, `mbl/`, `tests/e2e/` or its own file change, so
    a required `e2e` check leaves a docs-only PR waiting forever. Require only `test`, or require
    `e2e` through a ruleset or workflow that treats a skipped check as passing.
 3. **Actions permissions**: default workflow token `read`; only the `publish` job gets write
    access. Also limit which workflows may run and who can trigger them:
-   <https://github.com/Psycomy/MikrotikBlockList/settings/actions>.
+   <https://github.com/Psycomy/MikroBlockList/settings/actions>.
 4. **Review tokens**: revoke personal access tokens you no longer use:
    <https://github.com/settings/tokens>.
 5. **Review deploy keys**: remove any you do not recognise:
-   <https://github.com/Psycomy/MikrotikBlockList/settings/keys>.
+   <https://github.com/Psycomy/MikroBlockList/settings/keys>.
 
 6. **Issue labels**: the issue forms apply the labels `false-positive` and `bug`; they must exist
    in the repository (create them once under *Issues → Labels*), or the issue is opened without one.
@@ -56,7 +56,7 @@ their last good list.
 ## Reporting a vulnerability
 
 Use GitHub private vulnerability reporting (the owner must have enabled it, see above):
-<https://github.com/Psycomy/MikrotikBlockList/security/advisories/new>.
+<https://github.com/Psycomy/MikroBlockList/security/advisories/new>.
 Please do not open a public issue for security problems.
 
 ## Resumen en español

@@ -149,7 +149,7 @@ class RenderTest(unittest.TestCase):
             txt = (out / "blocklist.txt").read_text()
         self.assertTrue(text.endswith("# MBL-END\n"))
         lines = text.splitlines()
-        self.assertTrue(lines[0].startswith("# MikrotikBlockList v2"))
+        self.assertTrue(lines[0].startswith("# MikroBlockList v2"))
         self.assertEqual(lines[-2:], [":global mblImportOk true", "# MBL-END"])
         self.assertIn("# generated: 2026-10-19T04:17:00Z entries: 2", lines)
         start = lines.index("/ip firewall address-list")
@@ -169,10 +169,10 @@ class RenderTest(unittest.TestCase):
         self.assertEqual(
             others,
             [
-                "# MikrotikBlockList v2 - https://github.com/Psycomy/MikrotikBlockList",
+                "# MikroBlockList v2 - https://github.com/Psycomy/MikroBlockList",
                 "# For home / non-commercial use only (see source licenses in README)",
                 "# generated: 2026-10-19T04:17:00Z entries: 1",
-                "# Sources and terms: https://github.com/Psycomy/MikrotikBlockList/blob/lists/NOTICE.md",
+                "# Sources and terms: https://github.com/Psycomy/MikroBlockList/blob/lists/NOTICE.md",
                 ":global mblTarget",
                 "/ip firewall address-list",
                 ":global mblImportOk true",
@@ -213,8 +213,9 @@ class RenderTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             write_outputs(Path(tmp), {"full": nets}, results, WHEN)
             notice = (Path(tmp) / "NOTICE.md").read_text()
-        self.assertIn("MikrotikBlockList", notice)
-        self.assertIn("https://github.com/Psycomy/MikrotikBlockList", notice)
+        self.assertIn("MikroBlockList", notice)
+        self.assertIn("https://github.com/Psycomy/MikroBlockList", notice)
+        self.assertIn("not affiliated with MikroTik", notice)
         self.assertIn("For home / non-commercial use only", notice)
         self.assertIn("third-party sources", notice)
         self.assertIn("GPL-3.0", notice)
