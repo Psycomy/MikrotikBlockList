@@ -23,6 +23,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="skip only the check that refuses a total more than 2x the previous one")
     p.add_argument("--cdn-snapshot", type=Path, default=DEFAULT_SNAPSHOT,
                    help="CDN provider lists used when a live download is rejected")
+    p.add_argument("--dbip", type=Path, default=None, metavar="PATH",
+                   help="DB-IP country file (from dbip-fetch) for the countries in lookup.json")
     s = sub.add_parser("cdn-snapshot", help="download the CDN lists into a snapshot file")
     s.add_argument("--out", type=Path, default=DEFAULT_SNAPSHOT)
     h = sub.add_parser("health", help="check a published build; prints one line per problem")
@@ -57,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     return build(args.sources, args.allowlist, args.out, args.previous_stats,
                  allow_growth=args.allow_growth, version_path=args.version_file,
-                 cdn_snapshot=args.cdn_snapshot)
+                 cdn_snapshot=args.cdn_snapshot, dbip_path=args.dbip)
 
 
 if __name__ == "__main__":
