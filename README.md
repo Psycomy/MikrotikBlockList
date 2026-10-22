@@ -415,6 +415,7 @@ The RouterOS installer is also tested end to end on a disposable CHR (`MBL_E2E=1
 ## Security and reporting problems
 
 - [`docs/security.md`](docs/security.md): threat model, what to configure on GitHub, and how to report a vulnerability privately.
+- [`docs/maintenance.md`](docs/maintenance.md): the issues the workflows open when something needs attention, and what to do for each one.
 - Wrongly blocked address or a bug? Use the issue forms:
   [false positive](https://github.com/Psycomy/MikroBlockList/issues/new?template=false_positive.yml) or
   [bug report](https://github.com/Psycomy/MikroBlockList/issues/new?template=bug.yml).
@@ -590,7 +591,8 @@ usando, con un aviso para renovarlo. La copia se actualiza a mano con
 ### Seguridad y reportes
 
 Modelo de amenaza, ajustes recomendados de GitHub e informe privado de vulnerabilidades:
-[`docs/security.md`](docs/security.md). Para un falso positivo o un fallo usa las plantillas:
+[`docs/security.md`](docs/security.md). El mantenimiento (las incidencias automáticas y qué hacer con cada una)
+está en [`docs/maintenance.md`](docs/maintenance.md). Para un falso positivo o un fallo usa las plantillas:
 [falso positivo](https://github.com/Psycomy/MikroBlockList/issues/new?template=false_positive.yml) y
 [bug](https://github.com/Psycomy/MikroBlockList/issues/new?template=bug.yml). Reinstalar no deja
 huecos: las reglas `MBL:` viejas pasan a `MBL-OLD:` y se borran cuando ya existen las nuevas. Tampoco

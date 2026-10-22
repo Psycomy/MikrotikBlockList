@@ -78,3 +78,42 @@ jobs:
           git commit -m "lists: $(date -u +%Y-%m-%d)"
           git -c "http.extraheader=Authorization: Basic ${auth}" \
             push -f "https://github.com/${REPO}" lists
+
+  # Daily health report: one "build-health" issue, opened when something needs
+  # attention (failed or empty source, CDN snapshot in use or getting old, IPv6
+  # withheld, stale lists, failed run) and closed when a run is healthy again.
+  # Only on the schedule: push and manual runs do not open or close it.
+  health:
+    needs: publish
+    if: always() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Check the published build
+        env:
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+          STATS: "https://raw.githubusercontent.com/${{ github.repository }}/lists/stats.json"
+        run: |
+          if [ "$PUBLISH_RESULT" != "success" ]; then
+            echo "the build did not publish (publish job: $PUBLISH_RESULT); see the run log" > problems.txt
+          else
+            : > problems.txt
+          fi
+          python -m mbl health --stats "$STATS" >> problems.txt || true
+          cat problems.txt
+      - name: Update the build-health issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        run: |
+          .github/scripts/health-issue.sh build-health "Build health: needs attention" problems.txt

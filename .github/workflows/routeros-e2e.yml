@@ -24,6 +24,8 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      chr_version: ${{ steps.chr.outputs.version }}
     permissions:
       contents: read
     env:
@@ -104,3 +106,33 @@ jobs:
           name: routeros-e2e-logs
           path: e2e-artifacts/
           if-no-files-found: warn
+
+  # The weekly run tests the latest stable RouterOS: a failure there usually
+  # means a RouterOS change, so it opens a "routeros-e2e" issue, and the next
+  # healthy weekly run closes it.
+  report:
+    needs: e2e
+    if: always() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Update the routeros-e2e issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          RESULT: ${{ needs.e2e.result }}
+          CHR_VERSION: ${{ needs.e2e.outputs.chr_version }}
+        run: |
+          if [ "$RESULT" != "success" ]; then
+            echo "the end-to-end tests on RouterOS ${CHR_VERSION:-(unknown version)} did not pass (e2e job: $RESULT)" > problems.txt
+          else
+            : > problems.txt
+          fi
+          .github/scripts/health-issue.sh routeros-e2e "RouterOS e2e: latest stable fails" problems.txt
