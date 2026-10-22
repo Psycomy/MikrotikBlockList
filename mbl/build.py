@@ -262,10 +262,21 @@ def build(sources_path: Path, allowlist_path: Path, out_dir: Path,
     write_outputs(Path(out_dir), variants, results, now, script_version, variants6,
                   ipv6_baseline=baseline6, files6=files6,
                   cdn_info={**cdn.info, "cap": cap})
-    # The lookup page data is best effort: a failure only skips lookup.json.
+    # The lookup page data is best effort: without DB-IP it has no countries, and
+    # any other failure only skips lookup.json (removing a stale one).
+    geo = None
+    if dbip_path:
+        try:
+            geo = CountryDb.load(dbip_path)
+        except Exception as exc:
+            print(f"warning: DB-IP unavailable ({type(exc).__name__}: {exc}); "
+                  "lookup.json without countries", file=sys.stderr)
     try:
-        geo = CountryDb.load(dbip_path) if dbip_path else None
         write_lookup(Path(out_dir), lookup_data(variants, variants6, results, now, geo))
     except Exception as exc:
         print(f"warning: lookup.json not published ({type(exc).__name__}: {exc})", file=sys.stderr)
+        try:
+            (Path(out_dir) / "lookup.json").unlink(missing_ok=True)
+        except OSError as err:
+            print(f"warning: stale lookup.json not removed ({err})", file=sys.stderr)
     return 0

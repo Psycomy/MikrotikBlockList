@@ -114,6 +114,8 @@ class BuildTest(BuildBase):
         self.assertIsNone(data["dbip_month"])
 
     def test_build_failure_isolated(self):
+        self.out.mkdir()
+        (self.out / "lookup.json").write_text("stale")
         err = io.StringIO()
         with mock.patch("mbl.build.lookup_data", side_effect=RuntimeError("bad")), \
                 contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
@@ -124,6 +126,21 @@ class BuildTest(BuildBase):
         self.assertTrue((self.out / "routeros-full.txt").exists())
         self.assertFalse((self.out / "lookup.json").exists())
         self.assertIn("lookup.json not published", err.getvalue())
+
+    def test_build_bad_dbip_publishes_without_countries(self):
+        bad = self.tmp / "dbip-country-lite-2026-10.csv.gz"
+        bad.write_text("not gzip")
+        for path in (bad, self.tmp / "missing.csv.gz"):
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+                code = build(self.sources, self.allow, self.out, None, now=WHEN,
+                             fetcher=_fetcher(), version_path=self.version, dbip_path=path)
+            self.assertEqual(code, 0)
+            data = json.loads((self.out / "lookup.json").read_text(encoding="utf-8"))
+            self.assertIsNone(data["dbip_month"])
+            self.assertEqual({e[2] for e in data["v4"]["full"]}, {""})
+            self.assertIn("DB-IP unavailable", err.getvalue())
+            self.assertIn("lookup.json without countries", err.getvalue())
 
     def test_build_with_dbip(self):
         dbip = self.tmp / "dbip-country-lite-2026-10.csv.gz"
