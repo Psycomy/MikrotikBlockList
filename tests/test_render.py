@@ -178,11 +178,11 @@ class RenderTest(unittest.TestCase):
         self.assertIn("GPL-3.0", notice)
         self.assertIn("2026-10-19T04:17:00Z", notice)
         rows = [l for l in notice.splitlines() if l.startswith("| ")]
-        self.assertEqual(rows[0], "| source | url | category | license / terms | variants | entries | entries6 | error |")
+        self.assertEqual(rows[0], "| source | url | category | license / terms | variants | entries | entries6 | error | Notice |")
         self.assertIn("| spamhaus-drop | https://www.spamhaus.org/drop/drop.txt | attack "
-                      "| Spamhaus DROP terms | full | 2 | 0 |  |", rows)
+                      "| Spamhaus DROP terms | full | 2 | 0 |  | (c) The Spamhaus Project SLU (fetched 2026-10-19T04:17:00Z) |", rows)
         self.assertIn("| dshield | https://www.dshield.org/block.txt | attack | CC BY-NC-SA "
-                      "| full | 0 | 0 | HTTPError: HTTP Error 503: down |", rows)
+                      "| full | 0 | 0 | HTTPError: HTTP Error 503: down |  |", rows)
 
     def test_notice_counts_ipv4_and_ipv6_separately(self):
         src = Source("mix", "https://x", "plain", "attack")
@@ -191,14 +191,27 @@ class RenderTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             write_outputs(Path(tmp), {"full": []}, res, WHEN)
             notice = (Path(tmp) / "NOTICE.md").read_text()
-        self.assertIn("| mix | https://x | attack |  | full | 1 | 2 |  |", notice)
+        self.assertIn("| mix | https://x | attack |  | full | 1 | 2 |  |  |", notice)
 
     def test_notice_escapes_pipes(self):
         src = Source("s", "https://x", "plain", "attack", license_note="a | b")
         with tempfile.TemporaryDirectory() as tmp:
             write_outputs(Path(tmp), {"full": []}, [SourceResult(src, [], 0, "x|y")], WHEN)
             notice = (Path(tmp) / "NOTICE.md").read_text()
-        self.assertIn("| s | https://x | attack | a \\| b | full | 0 | 0 | x\\|y |", notice)
+        self.assertIn("| s | https://x | attack | a \\| b | full | 0 | 0 | x\\|y |  |", notice)
+
+    def test_notice_md_shows_source_notices(self):
+        src = Source("spamhaus-drop", "https://x", "plain", "attack")
+        other = Source("other", "https://y", "plain", "attack")
+        res = [SourceResult(src, [IPv4Network("1.1.1.0/24")], 0, None,
+                            "Spamhaus DROP List 2026/10/22 - (c) 2026 The Spamhaus Project SLU"),
+               SourceResult(other, [IPv4Network("2.2.2.0/24")], 0, None)]
+        with tempfile.TemporaryDirectory() as tmp:
+            write_outputs(Path(tmp), {"full": []}, res, WHEN)
+            notice = (Path(tmp) / "NOTICE.md").read_text()
+        self.assertIn("| Spamhaus DROP List 2026/10/22 - (c) 2026 The Spamhaus Project SLU |",
+                      notice)
+        self.assertIn("| other | https://y | attack |  | full | 1 | 0 |  |  |", notice)
 
 
 if __name__ == "__main__":

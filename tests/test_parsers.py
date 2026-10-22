@@ -118,6 +118,25 @@ class ParserTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse("nope", "1.2.3.4")
 
+    def test_plain_keeps_copyright_notice(self):
+        text = ("; Spamhaus DROP List 2026/10/22 - (c) 2026 The Spamhaus Project SLU\n"
+                "; https://x\n; Last-Modified: Wed, 21 Oct 2026 14:04:29 GMT\n"
+                "1.10.16.0/20 ; SBL1\n")
+        self.assertEqual(
+            parse("plain", text).notice,
+            "Spamhaus DROP List 2026/10/22 - (c) 2026 The Spamhaus Project SLU; "
+            "Last-Modified: Wed, 21 Oct 2026 14:04:29 GMT")
+
+    def test_plain_without_copyright_has_empty_notice(self):
+        self.assertEqual(parse("plain", "1.1.1.1\n").notice, "")
+
+    def test_jsonl_keeps_metadata_notice(self):
+        text = ('{"cidr":"1.10.16.0/20"}\n'
+                '{"type":"metadata","timestamp":1792673042,'
+                '"copyright":"(c) 2026 The Spamhaus Project SLU"}\n')
+        self.assertEqual(parse("jsonl_cidr", text).notice,
+                         "(c) 2026 The Spamhaus Project SLU; timestamp 2026-10-22T12:44:02Z")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -22,6 +22,8 @@ class _Handler(BaseHTTPRequestHandler):
         cls.agents.append(self.headers.get("User-Agent"))
         if self.path == "/ok":
             body, code = b"1.1.1.1\n", 200
+        elif self.path == "/notice":
+            body, code = b"; (c) 2026 Acme\n1.1.1.1\n", 200
         elif self.path == "/html":
             body, code = b"<html><body>hello</body></html>", 200
         elif self.path == "/flaky":
@@ -53,6 +55,11 @@ class FetchTests(unittest.TestCase):
     def fetch(self, path):
         src = Source("s", self.base + path, "plain", "attack")
         return fetch_all([src], timeout=2, retries=2, backoff=0)[0]
+
+    def test_fetch_one_carries_notice(self):
+        r = self.fetch("/notice")
+        self.assertIsNone(r.error)
+        self.assertEqual(r.notice, "(c) 2026 Acme")
 
     def test_fetch_ok(self):
         r = self.fetch("/ok")

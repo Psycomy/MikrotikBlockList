@@ -3,6 +3,7 @@ import csv
 import re
 from dataclasses import dataclass, field
 import json
+from datetime import datetime, timezone
 from ipaddress import IPv4Network, IPv6Network, ip_network
 
 _PLAIN_TOKEN = re.compile(r"[#;\s]")
@@ -12,6 +13,7 @@ _PLAIN_TOKEN = re.compile(r"[#;\s]")
 class ParseResult:
     networks: list[IPv4Network | IPv6Network] = field(default_factory=list)
     invalid: int = 0
+    notice: str = ""
 
 
 def _lines(text: str) -> list[str]:
@@ -28,11 +30,21 @@ def _add(result: ParseResult, token: str) -> None:
 
 def _parse_plain(text: str) -> ParseResult:
     result = ParseResult()
+    copyright_line = last_modified = ""
     for line in _lines(text):
         line = line.strip()
-        if not line or line[0] in "#;":
+        if not line:
+            continue
+        if line[0] in "#;":
+            comment = line.lstrip("#;").strip()
+            if not copyright_line and "(c)" in comment:
+                copyright_line = comment
+            elif not last_modified and comment.startswith("Last-Modified:"):
+                last_modified = comment
             continue
         _add(result, _PLAIN_TOKEN.split(line, maxsplit=1)[0])
+    if copyright_line:
+        result.notice = "; ".join(filter(None, (copyright_line, last_modified)))
     return result
 
 
@@ -93,6 +105,12 @@ def _parse_jsonl_cidr(text: str) -> ParseResult:
         except ValueError:
             result.invalid += 1
             continue
+        if isinstance(obj, dict) and isinstance(obj.get("copyright"), str):
+            result.notice = obj["copyright"].strip()
+            stamp = obj.get("timestamp")
+            if isinstance(stamp, int) and not isinstance(stamp, bool):
+                when = datetime.fromtimestamp(stamp, timezone.utc)
+                result.notice += f"; timestamp {when:%Y-%m-%dT%H:%M:%SZ}"
         if not isinstance(obj, dict) or "cidr" not in obj:
             continue
         cidr = obj["cidr"]
