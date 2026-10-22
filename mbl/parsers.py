@@ -109,8 +109,12 @@ def _parse_jsonl_cidr(text: str) -> ParseResult:
             result.notice = obj["copyright"].strip()
             stamp = obj.get("timestamp")
             if isinstance(stamp, int) and not isinstance(stamp, bool):
-                when = datetime.fromtimestamp(stamp, timezone.utc)
-                result.notice += f"; timestamp {when:%Y-%m-%dT%H:%M:%SZ}"
+                try:
+                    when = datetime.fromtimestamp(stamp, timezone.utc)
+                except (OverflowError, OSError, ValueError):
+                    pass  # optional metadata: keep the copyright alone
+                else:
+                    result.notice += f"; timestamp {when:%Y-%m-%dT%H:%M:%SZ}"
         if not isinstance(obj, dict) or "cidr" not in obj:
             continue
         cidr = obj["cidr"]

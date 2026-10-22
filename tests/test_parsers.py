@@ -137,6 +137,17 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(parse("jsonl_cidr", text).notice,
                          "(c) 2026 The Spamhaus Project SLU; timestamp 2026-10-22T12:44:02Z")
 
+    def test_jsonl_out_of_range_timestamp_keeps_copyright_and_networks(self):
+        text = ('{"cidr":"1.10.16.0/20"}\n'
+                '{"type":"metadata","timestamp":%d,"copyright":"(c) 2026 X"}\n' % 10**20)
+        r = parse("jsonl_cidr", text)
+        self.assertEqual([str(n) for n in r.networks], ["1.10.16.0/20"])
+        self.assertEqual(r.notice, "(c) 2026 X")
+
+    def test_jsonl_copyright_without_timestamp(self):
+        text = '{"type":"metadata","copyright":"(c) 2026 X"}\n{"cidr":"1.10.16.0/20"}\n'
+        self.assertEqual(parse("jsonl_cidr", text).notice, "(c) 2026 X")
+
 
 if __name__ == "__main__":
     unittest.main()
