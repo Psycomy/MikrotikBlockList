@@ -525,7 +525,7 @@
                 :if ($n < [:len $ln]) do={ :set ln [:pick $ln 0 $n] }
                 :if ($first) do={
                   :set first false
-                  # Both the current header and the pre-rename one (MikrotikBlockList) are accepted.
+                  # Both the new name and the pre-rename one are accepted; published lists use the old one until 2027-04-30.
                   :if ([:pick $ln 0 20] != "# MikrotikBlockList " && [:pick $ln 0 17] != "# MikroBlockList ") do={
                     :set reason "no header"
                   } else={

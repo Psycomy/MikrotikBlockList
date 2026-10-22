@@ -14,6 +14,8 @@ published list carries it as `script=<version>` in its header.
 - The installer accepts list headers starting with `# MikroBlockList ` as well as
   `# MikrotikBlockList `. Published lists keep the old header until 2027-04-30 so routers on
   script 3.3.2 or older keep loading them.
+- The legacy v2 `blocklist.rsc` keeps its `# MikrotikBlockList v2` first line too: the v2 updater
+  rejects the file without it.
 
 ### Added
 - Trademark notice (not affiliated with MikroTik) in the README and NOTICE.md.

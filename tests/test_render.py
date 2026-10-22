@@ -149,7 +149,7 @@ class RenderTest(unittest.TestCase):
             txt = (out / "blocklist.txt").read_text()
         self.assertTrue(text.endswith("# MBL-END\n"))
         lines = text.splitlines()
-        self.assertTrue(lines[0].startswith("# MikroBlockList v2"))
+        self.assertTrue(lines[0].startswith("# MikrotikBlockList v2"))
         self.assertEqual(lines[-2:], [":global mblImportOk true", "# MBL-END"])
         self.assertIn("# generated: 2026-10-19T04:17:00Z entries: 2", lines)
         start = lines.index("/ip firewall address-list")
@@ -169,7 +169,7 @@ class RenderTest(unittest.TestCase):
         self.assertEqual(
             others,
             [
-                "# MikroBlockList v2 - https://github.com/Psycomy/MikroBlockList",
+                "# MikrotikBlockList v2 - https://github.com/Psycomy/MikroBlockList",
                 "# For home / non-commercial use only (see source licenses in README)",
                 "# generated: 2026-10-19T04:17:00Z entries: 1",
                 "# Sources and terms: https://github.com/Psycomy/MikroBlockList/blob/lists/NOTICE.md",
