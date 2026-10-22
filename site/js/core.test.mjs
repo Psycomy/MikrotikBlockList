@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  parseQuery, buildIndex, search, reportUrl, formatCount, maskCidr, resultTone,
+  parseQuery, buildIndex, search, reportUrl, formatCount, maskCidr, resultTone, exampleIp,
 } from './core.js';
 
 const NOW = new Date('2026-10-22T06:00:00Z');
@@ -305,4 +305,21 @@ test('resultTone: unknown states are amber, never green', () => {
   assert.equal(resultTone(r('clear', true)), 'warn');
   assert.equal(resultTone(r('partial')), 'warn');
   assert.equal(resultTone(r('v6-unpublished')), 'warn');
+});
+
+test('exampleIp: a listed address from the first full entry with a country', () => {
+  const index = buildIndex(sample());
+  const ip = exampleIp(index);
+  assert.ok(ip);
+  assert.equal(search(index, parseQuery(ip), NOW).state, 'blocked');
+  assert.equal(exampleIp(buildIndex({
+    generated_at: NOW.toISOString(), sources: [],
+    v4: { full: [['10.0.0.0/24', [0], ''], ['192.0.2.7/32', [0], 'NL']], lite: [] },
+  })), '192.0.2.7');
+  assert.equal(exampleIp(buildIndex({
+    generated_at: NOW.toISOString(), sources: [],
+    v4: { full: [['10.0.0.0/24', [0], 'NL']], lite: [] },
+  })), '10.0.0.1');
+  assert.equal(exampleIp(buildIndex({ generated_at: NOW.toISOString(), sources: [],
+    v4: { full: [], lite: [] } })), null);
 });

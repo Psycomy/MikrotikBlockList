@@ -8,7 +8,7 @@ import { t, lang, flag, countryName } from './i18n.js';
 import { externalLink, badge } from './sources.js';
 
 const SCAN_MS = 1000;
-const COMET_FALLBACK_MS = 2600; // a big comet takes ~2.1 s; a hidden tab never lands it
+const COMET_FALLBACK_MS = 1600; // a big comet takes ~1.3 s; a hidden tab never lands it
 const RGB = { cyan: '0,217,255', bad: '255,56,96', warn: '255,181,71', ok: '43,255,136' };
 const STATUS_KEY = {
   blocked: 'st_blocked', partial: 'st_partial', clear: 'st_clear', 'v6-unpublished': 'st_v6',
@@ -16,6 +16,7 @@ const STATUS_KEY = {
 
 let run = 0; // the current search; older ones stop at their next await
 let last = null; // what the card shows, to redraw it on a language change
+let flight = null; // the result whose effects (wave, comet) are still playing
 
 const bar = els.bar.querySelector('i');
 const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
@@ -272,6 +273,7 @@ function render() {
 export async function runSearch(text) {
   const token = ++run;
   last = null;
+  flight = null;
   stopScan();
   els.r.replaceChildren();
   const query = parseQuery(text);
@@ -307,10 +309,10 @@ export async function runSearch(text) {
   }
 
   const result = search(index, query, new Date());
-  last = { kind: 'result', query, result };
   const tone = resultTone(result);
-  if (!animate) { render(); return; }
+  if (!animate) { last = { kind: 'result', query, result }; render(); return; }
 
+  flight = result;
   setLine(t(STATUS_KEY[result.state]), tone);
   wave(RGB[tone]);
   if (result.state === 'blocked') {
@@ -322,6 +324,8 @@ export async function runSearch(text) {
     if (token !== run) return;
     flash();
   }
+  flight = null;
+  last = { kind: 'result', query, result };
   render();
 }
 
@@ -330,7 +334,12 @@ onSearch(runSearch);
 // redraw the card in the new language (app.js has just reset the status line)
 document.addEventListener('langchange', () => {
   if (els.form.classList.contains('scanning')) return;
-  if (last) render();
+  if (flight) {
+    // the card comes on impact: only the status line changes language now
+    setLine(t(STATUS_KEY[flight.state]), resultTone(flight));
+  } else if (last) {
+    render();
+  }
 });
 
 // a search made while the list was unavailable runs again once a Retry loads it

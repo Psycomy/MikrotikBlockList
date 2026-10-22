@@ -1,5 +1,5 @@
 // Page wiring: map, language, loading lookup.json, status line, footer and ticker.
-import { buildIndex, formatCount, maskCidr } from './core.js';
+import { buildIndex, formatCount, maskCidr, exampleIp } from './core.js';
 import { createMap } from './map.js';
 import { t, lang, setLang, applyStrings, flag, countryName, categoryName } from './i18n.js';
 
@@ -144,6 +144,7 @@ async function load() {
     resolveReady(index);
     setStatus('ready');
     renderFooter();
+    setExample();
     startTicker();
   } catch (err) {
     console.warn('lookup.json unavailable:', err.message || err);
@@ -251,6 +252,14 @@ document.addEventListener('langchange', () => {
 });
 
 // --- search box, examples, retry ---
+// The first example (185.220.101.4 in the markup, until the data loads) becomes an address
+// that is listed today.
+function setExample() {
+  const ip = exampleIp(index);
+  const ex = document.querySelector('.ex');
+  if (ip && ex) ex.textContent = ip;
+}
+
 els.form.addEventListener('submit', (event) => {
   event.preventDefault();
   if (searchHandler) searchHandler(els.q.value);

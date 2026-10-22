@@ -294,6 +294,18 @@ export function maskCidr(cidr) {
 }
 
 /**
+ * A listed IPv4 address to offer as the "blocked" example: inside the first full entry that
+ * has a country (its first host address when the entry is wider than /31). null if none.
+ */
+export function exampleIp(index) {
+  const items = (index && index.v4 && index.v4.full.items) || [];
+  const item = items.find((it) => it[2]) || items[0];
+  const net = item ? parseNetwork(item[0]) : null;
+  if (!net || net.version !== 4) return null;
+  return v4Text(net.end - net.start > 1n ? net.start + 1n : net.start);
+}
+
+/**
  * The colour of a result: 'bad' (blocked, red), 'warn' (partial, IPv6 unpublished or a stale
  * "not listed", amber) or 'ok' (not listed with fresh data, green). Unknowns are never green.
  */

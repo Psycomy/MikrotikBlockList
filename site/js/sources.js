@@ -2,7 +2,7 @@
 // license_note and notice (the Spamhaus copyright line). Spamhaus appears here only as the
 // source of data.
 import { formatCount } from './core.js';
-import { index, ready } from './app.js';
+import { index, dataStatus } from './app.js';
 import { t, lang, categoryName } from './i18n.js';
 
 const dialog = document.getElementById('sources');
@@ -48,7 +48,7 @@ const safeUrl = (url) => (/^https:\/\//i.test(url || '') ? url : null);
 function render() {
   if (!index) {
     const row = document.createElement('tr');
-    cell(row, t('sources_wait')).colSpan = 5;
+    cell(row, t(dataStatus() === 'error' ? 'foot_unavailable' : 'sources_wait')).colSpan = 5;
     body.replaceChildren(row);
     return;
   }
@@ -98,4 +98,4 @@ dialog.addEventListener('close', () => {
   returnFocus = null;
 });
 document.addEventListener('langchange', () => { if (dialog.open) render(); });
-ready.then(() => { if (dialog.open) render(); });
+document.addEventListener('datastatus', () => { if (dialog.open) render(); });

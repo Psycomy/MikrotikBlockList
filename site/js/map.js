@@ -115,7 +115,7 @@ export function createMap(canvas, opts = {}) {
     if (t && Math.hypot(t[0] - p[0], t[1] - p[1]) < w * 0.12) t = randomDot();
     arcs.push({
       s: p, d: t, t: 0, big: !!big, done,
-      sp: big ? 0.008 : 0.007 + Math.random() * 0.009,
+      sp: big ? 0.013 : 0.007 + Math.random() * 0.009,
     });
   }
 

@@ -321,7 +321,8 @@ dialog.sources::backdrop { background: rgba(0, 4, 10, .7); }
 
 @media (max-width: 699.98px) {
   .ticker { display: none; }
-  main { padding-top: 56px; }
+  .lang { position: absolute; } /* scrolls away with the page instead of over the title */
+  main { padding-top: 64px; }
   .tag { margin-bottom: 26px; letter-spacing: 2px; font-size: 12px; }
   #q { font-size: 16px; padding: 16px 62px 16px 20px; }
   #go { width: 44px; height: 44px; right: 7px; }
