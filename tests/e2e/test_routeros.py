@@ -1129,6 +1129,18 @@ class RouterOsTest(unittest.TestCase):
         self.assertIn("routeros-full.txt", source)
         self.assertIn(':local ipv6 "no"', source)
 
+    def test_07j_leaked_install_flag_does_not_stick_lock(self):
+        # an installer killed at the wrong instant can leave mblInstallRun=true behind;
+        # a later scheduler run must not count as "owned" unless the lock is really held
+        self.install_sampled()
+        self.chr.run(":global mblInstallRun true; :global mblRunning false")
+        token = self.mark()
+        self.update()
+        self.assertIn("MBL: loaded", self.log_after(token))
+        self.assertFalse(self.running())
+        self.assertEqual(self.chr.run(":global mblInstallRun; :put $mblInstallRun").strip(),
+                         "false")
+
     def test_15_final_uninstall(self):
         # uninstall removes both families: give IPv6 something to remove first
         self.install_ipv6("true")

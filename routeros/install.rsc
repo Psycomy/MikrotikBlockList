@@ -41,7 +41,7 @@
 :local mblMinVersion "7.21"
 # Version of this installer and of the mbl-update it installs (= VERSION file).
 # mbl-update logs a warning when the published list says a newer one exists.
-:local mblScriptVersion "3.3.1"
+:local mblScriptVersion "3.3.2"
 
 # "7.21.3 (stable)" -> 7021 ; "7.19rc2" -> 7019
 :local mblVerNum do={
@@ -344,7 +344,7 @@
 }
 :local boot ($mblBoot = true)
 :set mblBoot false
-:local owned ($mblInstallRun = true)
+:local owned ($mblInstallRun = true && $mblRunning = true)
 :set mblInstallRun false
 :if ($mblRunning = true && !$owned) do={
   :log warning "MBL: update already running, skipped"
