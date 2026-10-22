@@ -41,7 +41,7 @@
 :local mblMinVersion "7.21"
 # Version of this installer and of the mbl-update it installs (= VERSION file).
 # mbl-update logs a warning when the published list says a newer one exists.
-:local mblScriptVersion "3.4.0"
+:local mblScriptVersion "3.4.1"
 
 # "7.21.3 (stable)" -> 7021 ; "7.19rc2" -> 7019
 :local mblVerNum do={
@@ -525,8 +525,7 @@
                 :if ($n < [:len $ln]) do={ :set ln [:pick $ln 0 $n] }
                 :if ($first) do={
                   :set first false
-                  # Both the new name and the pre-rename one are accepted; published lists use the old one until 2027-04-30.
-                  :if ([:pick $ln 0 20] != "# MikrotikBlockList " && [:pick $ln 0 17] != "# MikroBlockList ") do={
+                  :if ([:pick $ln 0 17] != "# MikroBlockList ") do={
                     :set reason "no header"
                   } else={
                     :local en [$mblField $ln "entries"]

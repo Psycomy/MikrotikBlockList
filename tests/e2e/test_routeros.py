@@ -187,9 +187,9 @@ class RouterOsTest(unittest.TestCase):
                 footer.replace(f"entries={LIST_SIZE}", f"entries={wrong}"))
         variant("routeros-full-crlf.txt", header,
                 [ln + (" " if i < 10 else "") for i, ln in enumerate(body)], footer, "\r\n")
-        assert header.startswith("# MikrotikBlockList v3 "), header
-        variant("routeros-full-newname.txt",
-                header.replace("# MikrotikBlockList v3 ", "# MikroBlockList v3 ", 1), body, footer)
+        assert header.startswith("# MikroBlockList v3 "), header
+        variant("routeros-full-oldname.txt",
+                header.replace("# MikroBlockList v3 ", "# MikrotikBlockList v3 ", 1), body, footer)
         variant("routeros-full-invalid.txt", header,
                 body + [f"bad-line-{i}" for i in range(LIST_SIZE // 50)], footer)
         lite_text = (served / "routeros-lite.txt").read_text()
@@ -840,16 +840,12 @@ class RouterOsTest(unittest.TestCase):
         finally:
             self.restore_path(name)
 
-    def test_13b_new_project_name_header_accepted(self):
-        name = "routeros-full-newname.txt"
+    def test_13b_old_project_name_header_rejected(self):
+        name = "routeros-full-oldname.txt"
         self.serve_variant(name)
         try:
-            old = self.active_list()
-            token = self.mark()
-            self.update()
-            self.assertNotEqual(self.active_list(), old)
-            self.assertEqual(self.count(self.active_list()), LIST_SIZE)
-            self.assertIn(f"MBL: loaded {LIST_SIZE} entries", self.log_after(token))
+            self.assert_failed_update_keeps_active(
+                f"/{name}", "MBL: mbl-new.txt rejected (no header)")
         finally:
             self.restore_path(name)
 

@@ -17,10 +17,8 @@ def _cidr(net: IPv4Network | IPv6Network) -> str:
 
 
 def _rsc(addresses: list[str], stamp: str) -> str:
-    # v2 routers abort unless the first line starts with "# MikrotikBlockList";
-    # this legacy file keeps the pre-rename name until it is retired (2027-04-30).
     lines = [
-        "# MikrotikBlockList v2 - https://github.com/Psycomy/MikroBlockList",
+        "# MikroBlockList v2 - https://github.com/Psycomy/MikroBlockList",
         "# For home / non-commercial use only (see source licenses in README)",
         f"# generated: {stamp} entries: {len(addresses)}",
         f"# Sources and terms: {NOTICE_URL}",
@@ -35,9 +33,7 @@ def _rsc(addresses: list[str], stamp: str) -> str:
 def router_txt(addresses: list[str], stamp: str, script_version: str,
                variant: str = "full", family: str = "ipv4") -> str:
     n = len(addresses)
-    # The header keeps the pre-rename project name: routers on script <= 3.3.2 only
-    # accept "# MikrotikBlockList ". Switch to "# MikroBlockList " after 2027-04-30.
-    lines = [f"# MikrotikBlockList v3 format=1 variant={variant} family={family} "
+    lines = [f"# MikroBlockList v3 format=1 variant={variant} family={family} "
              f"generated={stamp} entries={n} script={script_version}"]
     lines += addresses
     lines.append(f"# MBL-END entries={n}")
